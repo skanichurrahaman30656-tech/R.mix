@@ -1,14 +1,14 @@
 "use client";
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
-import { Lock, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+import { Lock, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
-  
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -41,17 +41,16 @@ export default function ResetPasswordPage() {
 
     try {
       const { error: resetError } = await supabase.auth.updateUser({
-        password: password
+        password: password,
       });
 
       if (resetError) throw resetError;
 
       setSuccess("Password updated successfully. Redirecting to login...");
-      
+
       setTimeout(() => {
-        router.push('/login');
+        router.push("/login");
       }, 2000);
-      
     } catch (err: any) {
       setError(err.message || "Failed to update password");
     } finally {
@@ -63,7 +62,9 @@ export default function ResetPasswordPage() {
     <div className="min-h-screen bg-white text-black font-sans flex items-center justify-center p-4 pb-20">
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
-          <h1 className="text-4xl font-serif font-bold italic tracking-tighter mb-2">R.mix</h1>
+          <h1 className="text-3xl font-serif tracking-widest uppercase mb-4">
+            R.MIX
+          </h1>
           <p className="text-gray-500 text-sm">Reset your password</p>
         </div>
 
@@ -85,9 +86,9 @@ export default function ResetPasswordPage() {
           <div className="space-y-3">
             <div className="relative">
               <Lock className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input 
-                type="password" 
-                placeholder="New Password" 
+              <input
+                type="password"
+                placeholder="New Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-gray-400 transition-colors"
@@ -97,9 +98,9 @@ export default function ResetPasswordPage() {
 
             <div className="relative">
               <Lock className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input 
-                type="password" 
-                placeholder="Confirm New Password" 
+              <input
+                type="password"
+                placeholder="Confirm New Password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-gray-400 transition-colors"
@@ -108,19 +109,25 @@ export default function ResetPasswordPage() {
             </div>
           </div>
 
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             disabled={loading}
-            className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg py-2.5 text-sm transition-colors mt-4 flex items-center justify-center gap-2 disabled:opacity-70"
+            className="w-full bg-blue-500 hover:bg-zinc-100 text-white font-semibold rounded-lg py-2.5 text-sm transition-colors mt-4 flex items-center justify-center gap-2 disabled:opacity-70"
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-            {loading ? 'Updating...' : 'Update Password'}
+            {loading ? "Updating..." : "Update Password"}
           </button>
         </form>
 
         <div className="text-center mt-6 border-t border-gray-200 pt-6">
           <p className="text-sm text-gray-600">
-            Remembered your password? <a href="/login" className="text-blue-500 font-semibold hover:underline">Log in</a>
+            Remembered your password?{" "}
+            <a
+              href="/login"
+              className="text-blue-500 font-semibold hover:underline"
+            >
+              Log in
+            </a>
           </p>
         </div>
       </div>

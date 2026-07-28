@@ -1,19 +1,26 @@
 "use client";
-import { useState, useRef } from 'react';
-import { supabase } from '@/lib/supabase';
-import { X, Image as ImageIcon, Video, Loader2 } from 'lucide-react';
+import { useState, useRef } from "react";
+import { supabase } from "@/lib/supabase";
+import { X, Image as ImageIcon, Video, Loader2 } from "lucide-react";
 
 interface CreatePostModalProps {
   isOpen: boolean;
   onClose: () => void;
   user: any;
   onPostCreated?: () => void;
+  initialMode?: 'photo' | 'video' | 'reel' | 'text';
 }
 
-import { compressImage } from '@/lib/compress';
+import { compressImage } from "@/lib/compress";
 
-export default function CreatePostModal({ isOpen, onClose, user, onPostCreated }: CreatePostModalProps) {
-  const [caption, setCaption] = useState('');
+export default function CreatePostModal({
+  isOpen,
+  onClose,
+  user,
+  onPostCreated,
+  initialMode = 'text',
+}: CreatePostModalProps) {
+  const [caption, setCaption] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<{ url: string; type: string }[]>([]);
   const [loading, setLoading] = useState(false);
@@ -29,10 +36,12 @@ export default function CreatePostModal({ isOpen, onClose, user, onPostCreated }
     if (!selectedFiles.length) return;
 
     // Validate size and type
-    const validFiles = selectedFiles.filter(file => {
-      const isVideo = file.type.startsWith('video/mp4') || file.type.startsWith('video/quicktime');
-      const isImage = file.type.startsWith('image/');
-      
+    const validFiles = selectedFiles.filter((file) => {
+      const isVideo =
+        file.type.startsWith("video/mp4") ||
+        file.type.startsWith("video/quicktime");
+      const isImage = file.type.startsWith("image/");
+
       if (!isVideo && !isImage) {
         setError("Only images and MP4 videos are supported.");
         return false;
@@ -46,43 +55,43 @@ export default function CreatePostModal({ isOpen, onClose, user, onPostCreated }
 
     const processedFiles = await Promise.all(
       validFiles.map(async (file) => {
-        if (file.type.startsWith('image/')) {
+        if (file.type.startsWith("image/")) {
           return await compressImage(file, 1920);
         }
         return file;
-      })
+      }),
     );
 
-    setFiles(prev => [...prev, ...processedFiles]);
+    setFiles((prev) => [...prev, ...processedFiles]);
 
     // Generate previews
-    processedFiles.forEach(file => {
+    processedFiles.forEach((file) => {
       const url = URL.createObjectURL(file);
-      setPreviews(prev => [...prev, { url, type: file.type }]);
+      setPreviews((prev) => [...prev, { url, type: file.type }]);
     });
   };
 
   const removeFile = (index: number) => {
-    setFiles(prev => prev.filter((_, i) => i !== index));
-    setPreviews(prev => prev.filter((_, i) => i !== index));
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    setPreviews((prev) => prev.filter((_, i) => i !== index));
   };
 
   const uploadFile = async (file: File): Promise<string> => {
-    const fileExt = file.name.split('.').pop();
+    const fileExt = file.name.split(".").pop();
     const fileName = `${user.id}-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-    
+
     const { data, error } = await supabase.storage
-      .from('media')
-      .upload(fileName, file, { 
+      .from("media")
+      .upload(fileName, file, {
         upsert: false,
-        cacheControl: '3600'
+        cacheControl: "3600",
       });
 
     if (error) throw error;
 
-    const { data: { publicUrl } } = supabase.storage
-      .from('media')
-      .getPublicUrl(data.path);
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from("media").getPublicUrl(data.path);
 
     return publicUrl;
   };
@@ -99,44 +108,43 @@ export default function CreatePostModal({ isOpen, onClose, user, onPostCreated }
 
     try {
       const mediaUrls: string[] = [];
-      let postType = 'text';
+      let postType = initialMode === "reel" ? "reel" : "text";
 
       if (files.length > 0) {
         // Simple progress simulation for UX
         const progressInterval = setInterval(() => {
-          setProgress(p => Math.min(p + 10, 90));
+          setProgress((p) => Math.min(p + 10, 90));
         }, 500);
 
         for (let i = 0; i < files.length; i++) {
           const url = await uploadFile(files[i]);
           mediaUrls.push(url);
-          if (files[i].type.startsWith('video/')) {
-            postType = 'video';
-          } else if (postType !== 'video') {
-            postType = 'image';
+          if (files[i].type.startsWith("video/")) {
+            postType = initialMode === "reel" ? "reel" : "video";
+          } else if (postType !== "video" && postType !== "reel") {
+            postType = "image";
           }
         }
         clearInterval(progressInterval);
       }
-      
+
       setProgress(95);
 
-      const mediaUrlString = mediaUrls.length > 0 ? JSON.stringify(mediaUrls) : null;
+      const mediaUrlString =
+        mediaUrls.length > 0 ? JSON.stringify(mediaUrls) : null;
 
-      const { error: postError } = await supabase
-        .from('posts')
-        .insert({
-          user_id: user.id,
-          content: caption,
-          media_url: mediaUrlString,
-          type: postType
-        });
+      const { error: postError } = await supabase.from("posts").insert({
+        user_id: user.id,
+        content: caption,
+        media_url: mediaUrlString,
+        type: postType,
+      });
 
       if (postError) throw postError;
 
       setProgress(100);
       setTimeout(() => {
-        setCaption('');
+        setCaption("");
         setFiles([]);
         setPreviews([]);
         setLoading(false);
@@ -144,7 +152,6 @@ export default function CreatePostModal({ isOpen, onClose, user, onPostCreated }
         if (onPostCreated) onPostCreated();
         onClose();
       }, 500);
-
     } catch (err: any) {
       console.error(err);
       setError(err.message || "Failed to create post.");
@@ -155,16 +162,20 @@ export default function CreatePostModal({ isOpen, onClose, user, onPostCreated }
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
-        
+      <div className="bg-zinc-950 rounded-2xl w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full transition-colors">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-900">
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+          >
             <X className="w-6 h-6 text-gray-600" />
           </button>
-          <h3 className="font-semibold text-lg">Create new post</h3>
-          <button 
-            onClick={handlePost} 
+          <h3 className="font-semibold text-lg capitalize">
+            {initialMode ? `Create ${initialMode}` : "Create new post"}
+          </h3>
+          <button
+            onClick={handlePost}
             disabled={loading || (!caption.trim() && files.length === 0)}
             className="text-blue-500 font-semibold hover:text-blue-600 disabled:opacity-50 transition-colors"
           >
@@ -174,7 +185,6 @@ export default function CreatePostModal({ isOpen, onClose, user, onPostCreated }
 
         {/* Content */}
         <div className="overflow-y-auto p-4 flex-1 space-y-4">
-          
           {error && (
             <div className="bg-red-50 text-red-500 p-3 rounded-lg text-sm">
               {error}
@@ -182,8 +192,15 @@ export default function CreatePostModal({ isOpen, onClose, user, onPostCreated }
           )}
 
           <div className="flex gap-3">
-            <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden flex-shrink-0">
-              <img src={user.user_metadata?.avatar_url || "https://picsum.photos/seed/me/100/100"} alt="Avatar" className="w-full h-full object-cover" />
+            <div className="w-10 h-10 rounded-full bg-zinc-800 overflow-hidden flex-shrink-0">
+              <img
+                src={
+                  user.user_metadata?.avatar_url ||
+                  "https://picsum.photos/seed/me/100/100"
+                }
+                alt="Avatar"
+                className="w-full h-full object-cover"
+              />
             </div>
             <textarea
               placeholder="Write a caption..."
@@ -197,17 +214,28 @@ export default function CreatePostModal({ isOpen, onClose, user, onPostCreated }
           {previews.length > 0 && (
             <div className="grid grid-cols-2 gap-2 mt-4">
               {previews.map((preview, index) => (
-                <div key={index} className="relative aspect-square bg-gray-100 rounded-lg overflow-hidden border border-gray-200">
-                  {preview.type.startsWith('video/') ? (
-                    <video src={preview.url} className="w-full h-full object-cover" controls />
+                <div
+                  key={index}
+                  className="relative aspect-square bg-gray-100 rounded-lg overflow-hidden border border-zinc-800"
+                >
+                  {preview.type.startsWith("video/") ? (
+                    <video
+                      src={preview.url}
+                      className="w-full h-full object-cover"
+                      controls
+                    />
                   ) : (
-                    <img src={preview.url} alt="Preview" className="w-full h-full object-cover" />
+                    <img
+                      src={preview.url}
+                      alt="Preview"
+                      className="w-full h-full object-cover"
+                    />
                   )}
-                  <button 
+                  <button
                     onClick={() => removeFile(index)}
                     className="absolute top-2 right-2 p-1 bg-black/50 hover:bg-black/70 rounded-full transition-colors z-10"
                   >
-                    <X className="w-4 h-4 text-white" />
+                    <X className="w-4 h-4 text-zinc-50" />
                   </button>
                 </div>
               ))}
@@ -216,10 +244,10 @@ export default function CreatePostModal({ isOpen, onClose, user, onPostCreated }
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 border-t border-gray-100">
+        <div className="p-4 border-t border-zinc-900">
           {loading && progress > 0 && (
-            <div className="w-full bg-gray-200 rounded-full h-2 mb-4 overflow-hidden">
-              <div 
+            <div className="w-full bg-zinc-800 rounded-full h-2 mb-4 overflow-hidden">
+              <div
                 className="bg-blue-500 h-2 rounded-full transition-all duration-300"
                 style={{ width: `${progress}%` }}
               />
@@ -231,22 +259,22 @@ export default function CreatePostModal({ isOpen, onClose, user, onPostCreated }
               Add to your post
             </div>
             <div className="flex items-center gap-2">
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleFileSelect} 
-                accept="image/*,video/mp4,video/quicktime" 
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileSelect}
+                accept="image/*,video/mp4,video/quicktime"
                 multiple
-                className="hidden" 
+                className="hidden"
               />
-              <button 
+              <button
                 onClick={() => fileInputRef.current?.click()}
                 className="p-2 hover:bg-gray-100 rounded-full transition-colors text-green-500"
                 title="Photo"
               >
                 <ImageIcon className="w-6 h-6" />
               </button>
-              <button 
+              <button
                 onClick={() => fileInputRef.current?.click()}
                 className="p-2 hover:bg-gray-100 rounded-full transition-colors text-blue-500"
                 title="Video"

@@ -17,7 +17,6 @@ export function useIsMobile() {
     // since it's a common pattern.
     // Actually, setting it in useEffect is fine if we ignore the rule, or we can just initialize it in the state.
     // Let's use eslint-disable-next-line
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
     
     return () => mql.removeEventListener("change", onChange)

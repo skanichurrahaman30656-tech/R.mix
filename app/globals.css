@@ -1,6 +1,10 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+@source "../app";
+@source "../components";
+@source "../lib";
+
 @theme {
   --font-sans: var(--font-inter);
   --font-serif: var(--font-playfair);

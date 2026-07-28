@@ -1,5 +1,5 @@
 import MainDashboardClient from '@/components/MainDashboardClient';
 
-export default function Page() {
+export default function Home() {
   return <MainDashboardClient />;
 }
