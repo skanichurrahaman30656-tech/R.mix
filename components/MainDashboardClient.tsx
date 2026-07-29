@@ -1,5 +1,7 @@
 "use client";
 import Image from "next/image";
+import { VideoPlayer } from "./VideoPlayer";
+import { StoryViewer } from "./StoryViewer";
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -29,6 +31,7 @@ function ReelCardItem({
   toggleFollow,
   followedUsers,
   handleLike,
+  handleShare,
   handleToggleComments,
   handleBookmark,
   openUserProfile,
@@ -78,7 +81,7 @@ function ReelCardItem({
       key={reelItem.id} 
       className="snap-start h-full min-h-[540px] max-h-[720px] my-2 relative rounded-2xl overflow-hidden bg-black text-white flex flex-col justify-end p-4 border border-zinc-800 shadow-2xl group"
     >
-      <video 
+      <VideoPlayer 
         ref={videoRef}
         src={mediaSrc} 
         className="absolute inset-0 w-full h-full object-cover z-0 cursor-pointer" 
@@ -88,6 +91,7 @@ function ReelCardItem({
         preload="metadata"
         onTimeUpdate={(e) => handleReelTimeUpdate(reelItem.id, (e.target as HTMLVideoElement).currentTime)}
         onClick={() => setIsReelsMuted(!isReelsMuted)}
+        controls={false}
       />
 
       {/* Sound Indicator Badge Overlay */}
@@ -197,7 +201,7 @@ function ReelCardItem({
 
         {/* Share */}
         <button 
-          onClick={() => alert('Reel link copied to clipboard!')}
+          onClick={() => handleShare(reelItem.id)}
           className="flex flex-col items-center group"
         >
           <div className="p-3 rounded-full bg-black/40 backdrop-blur-md border border-white/10 group-hover:bg-black/60 transition-colors">
@@ -269,6 +273,7 @@ export default function MainDashboardClient() {
   const [activeSettingToast, setActiveSettingToast] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
   const [storyUploading, setStoryUploading] = useState(false);
+  const [selectedStoryIndex, setSelectedStoryIndex] = useState<number | null>(null);
   
   // Search & Reel States
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
@@ -355,7 +360,7 @@ export default function MainDashboardClient() {
   };
 
   const triggerSettingNotice = (title: string) => {
-    setActiveSettingToast(title);
+    setActiveSettingToast(`Opened ${title}`);
     setTimeout(() => setActiveSettingToast(null), 3000);
   };
 
@@ -470,6 +475,8 @@ export default function MainDashboardClient() {
       .select(`
         id,
         media_url,
+        type,
+        user_id,
         created_at,
         profiles:user_id ( id, username, avatar_url )
       `)
@@ -482,6 +489,9 @@ export default function MainDashboardClient() {
         avatar: s.profiles?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp',
         hasUnseen: true,
         media_url: s.media_url,
+        type: s.type,
+        user_id: s.user_id,
+        created_at: s.created_at,
         isUser: s.profiles?.id === userId
       }));
       setStories(formatted);
@@ -617,7 +627,7 @@ export default function MainDashboardClient() {
       }
     );
 
-    return () => subscription.unsubscribe();
+    const channel = supabase.channel("public:stories").on("postgres_changes", { event: "INSERT", schema: "public", table: "stories" }, () => { fetchStories(user?.id); }).subscribe(); return () => { subscription.unsubscribe(); supabase.removeChannel(channel); };
   }, [router]);
 
   // Real-time Subscriptions Setup
@@ -793,6 +803,27 @@ export default function MainDashboardClient() {
     }
   };
 
+  
+  const handleShare = async (postId: string) => {
+    const url = `${window.location.origin}?post=${postId}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Check out this post',
+          url: url
+        });
+        setActiveSettingToast('Shared successfully');
+        setTimeout(() => setActiveSettingToast(null), 2000);
+      } catch (err) {
+        console.error('Error sharing:', err);
+      }
+    } else {
+      navigator.clipboard.writeText(url);
+      setActiveSettingToast('Link copied to clipboard');
+      setTimeout(() => setActiveSettingToast(null), 2000);
+    }
+  };
+
   const handleToggleComments = (id: string) => {
     if (!id) return;
     setPosts(prevPosts => prevPosts.map(post =>
@@ -905,7 +936,7 @@ export default function MainDashboardClient() {
       {activeSettingToast && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-indigo-600 text-white text-xs sm:text-sm px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-bounce">
           <Check className="w-4 h-4" />
-          <span>Opened {activeSettingToast}</span>
+          <span>{activeSettingToast}</span>
         </div>
       )}
 
@@ -1003,7 +1034,7 @@ export default function MainDashboardClient() {
               </div>
 
               {stories.map(story => (
-                <div key={story.id} className="flex flex-col items-center gap-1 min-w-[72px] cursor-pointer" onClick={() => window.open(story.media_url, '_blank')}>
+                <div key={story.id} className="flex flex-col items-center gap-1 min-w-[72px] cursor-pointer" onClick={() => setSelectedStoryIndex(stories.findIndex(s => s.id === story.id))}>
                   <div className={`relative rounded-full p-[2px] ${story.hasUnseen ? 'bg-gradient-to-tr from-blue-500 via-indigo-500 to-purple-500' : 'bg-zinc-800'}`}>
                     <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-zinc-950">
                       <Image width={500} height={500} referrerPolicy="no-referrer" src={story.avatar} alt={story.author} className="w-full h-full object-cover" />
@@ -1069,7 +1100,7 @@ export default function MainDashboardClient() {
                     {post.image && (
                       <div className="aspect-square bg-zinc-900 relative rounded-md overflow-hidden mx-4 my-2 border border-zinc-800/50" onDoubleClick={() => handleLike(post.id, post.isLiked)}>
                         {post.type === 'video' || post.type === 'reel' ? (
-                          <video src={post.image} className="w-full h-full object-cover" controls loop />
+                          <VideoPlayer src={post.image} className="w-full h-full" controls loop />
                         ) : (
                           <Image width={500} height={500} referrerPolicy="no-referrer" src={post.image} alt="Post content" className="w-full h-full object-cover cursor-pointer" />
                         )}
@@ -1086,7 +1117,7 @@ export default function MainDashboardClient() {
                           <button onClick={() => handleToggleComments(post.id)} className="hover:opacity-70 transition-opacity">
                             <MessageCircle className="w-6 h-6" />
                           </button>
-                          <button onClick={() => alert('Post link copied to clipboard!')} className="hover:opacity-70 transition-opacity">
+                          <button onClick={() => handleShare(post.id)} className="hover:opacity-70 transition-opacity">
                             <Share2 className="w-6 h-6" />
                           </button>
                         </div>
@@ -1385,6 +1416,7 @@ export default function MainDashboardClient() {
                   toggleFollow={toggleFollow}
                   followedUsers={followedUsers}
                   handleLike={handleLike}
+                  handleShare={handleShare}
                   handleToggleComments={handleToggleComments}
                   handleBookmark={handleBookmark}
                   openUserProfile={openUserProfile}
@@ -1701,7 +1733,7 @@ export default function MainDashboardClient() {
                   {displayFilteredPosts.map((p) => (
                     <div key={p.id} className="aspect-square bg-zinc-900 relative rounded-xl overflow-hidden group cursor-pointer border border-zinc-800/50 shadow-sm">
                       {p.type === 'video' || p.type === 'reel' ? (
-                        <video src={p.image} className="w-full h-full object-cover" />
+                        <VideoPlayer src={p.image} className="w-full h-full" autoPlay loop muted controls={false} />
                       ) : p.image ? (
                         <Image width={500} height={500} referrerPolicy="no-referrer" src={p.image} alt="Post item" className="w-full h-full object-cover" loading="lazy" />
                       ) : (
@@ -2522,27 +2554,36 @@ export default function MainDashboardClient() {
       )}
 
       {/* Edit Profile Modal */}
+      {selectedStoryIndex !== null && (
+        <StoryViewer
+          stories={stories}
+          initialIndex={selectedStoryIndex}
+          onClose={() => setSelectedStoryIndex(null)}
+          currentUser={user}
+        />
+      )}
       {user && (
-        <EditProfileModal 
+        <EditProfileModal
           isOpen={showEditProfile}
           onClose={() => setShowEditProfile(false)}
           user={user}
           profile={profile}
           onProfileUpdated={() => {
-            supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', user.id)
-              .single()
-              .then(({ data }) => setProfile(data));
+            fetchPosts(user.id);
+            supabase.from('profiles').select('*').eq('id', user.id).single().then(({ data }) => setProfile(data));
           }}
+        />
+      )}
+
+      {/* Create Post Modal */}
+      {user && (
+        <CreatePostModal
+          isOpen={showCreatePost}
+          onClose={() => setShowCreatePost(false)}
+          user={user}
+          onPostCreated={() => fetchPosts(user.id)}
         />
       )}
     </div>
   );
-}
-
-// Helper to determine like status safely
-function postLikedStatus(fn: (p: any) => boolean, defaultVal: boolean) {
-  return defaultVal;
 }
