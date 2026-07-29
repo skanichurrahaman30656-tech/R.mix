@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -179,7 +180,7 @@ export default function SignUpPage() {
               className="w-24 h-24 rounded-full bg-gray-100 border-2 border-dashed border-zinc-700 flex items-center justify-center cursor-pointer overflow-hidden relative group"
             >
               {avatarPreview ? (
-                <img
+                <Image width={500} height={500}
                   src={avatarPreview}
                   alt="Avatar preview"
                   className="w-full h-full object-cover"

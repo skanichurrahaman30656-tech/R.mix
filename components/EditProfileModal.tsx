@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import { useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { X, Camera, Loader2, Image as ImageIcon } from "lucide-react";
@@ -44,8 +45,13 @@ export default function EditProfileModal({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      setError("Image must be less than 5MB");
+    const isImage = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(file.type);
+    if (!isImage) {
+      setError("Unsupported file type. Allowed types: JPG, PNG, WEBP.");
+      return;
+    }
+    if (file.size > 100 * 1024 * 1024) {
+      setError("Image must be less than 100MB");
       return;
     }
 
@@ -72,7 +78,7 @@ export default function EditProfileModal({
 
   const uploadImage = async (file: File, bucket: string): Promise<string> => {
     const fileExt = file.name.split(".").pop();
-    const fileName = `${user.id}-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+    const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
 
     const { data, error } = await supabase.storage
       .from(bucket)
@@ -160,7 +166,7 @@ export default function EditProfileModal({
             onClick={() => coverInputRef.current?.click()}
           >
             {coverPreview || profile?.cover_url ? (
-              <img
+              <Image width={500} height={500}
                 src={coverPreview || profile?.cover_url}
                 alt="Cover"
                 className="w-full h-full object-cover"
@@ -192,7 +198,7 @@ export default function EditProfileModal({
               onClick={() => avatarInputRef.current?.click()}
             >
               <div className="w-24 h-24 rounded-full border-4 border-white overflow-hidden bg-gray-100">
-                <img
+                <Image width={500} height={500}
                   src={
                     avatarPreview ||
                     profile?.avatar_url ||

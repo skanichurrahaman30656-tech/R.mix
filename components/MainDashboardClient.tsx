@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -117,7 +118,7 @@ function ReelCardItem({
             onClick={() => openUserProfile(reelItem.user_id)} 
             className="w-10 h-10 rounded-full overflow-hidden border-2 border-indigo-500 shadow cursor-pointer hover:opacity-80"
           >
-            <img referrerPolicy="no-referrer" src={reelItem.avatar || "https://picsum.photos/seed/user/100/100"} alt="Reel Author" className="w-full h-full object-cover" loading="lazy" />
+            <Image width={500} height={500} referrerPolicy="no-referrer" src={reelItem.avatar || "https://picsum.photos/seed/user/100/100"} alt="Reel Author" className="w-full h-full object-cover" loading="lazy" />
           </div>
           <div>
             <div 
@@ -233,6 +234,10 @@ function ReelCardItem({
 export default function MainDashboardClient() {
   const router = useRouter();
   const [posts, setPosts] = useState<any[]>([]);
+  const [page, setPage] = useState(0);
+  const [hasMorePosts, setHasMorePosts] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const POSTS_LIMIT = 5;
   const [stories, setStories] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{ profiles: any[]; posts: any[] }>({ profiles: [], posts: [] });
@@ -275,6 +280,23 @@ export default function MainDashboardClient() {
   const [viewingProfileStats, setViewingProfileStats] = useState<{ followers: number; following: number }>({ followers: 0, following: 0 });
   
   const storyInputRef = useRef<HTMLInputElement>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMorePosts && !isLoadingMore && !loading) {
+          setPage((p) => {
+            fetchPosts(user?.id, p + 1, true);
+            return p + 1;
+          });
+        }
+      },
+      { threshold: 0.1 }
+    );
+    if (loadMoreRef.current) observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [hasMorePosts, isLoadingMore, loading, user]);
 
   const openUserProfile = async (targetUserId: string) => {
     if (!targetUserId) return;
@@ -466,8 +488,13 @@ export default function MainDashboardClient() {
     }
   };
 
-  const fetchPosts = async (userId?: string) => {
-    setLoading(true);
+  const fetchPosts = async (userId?: string, pageIndex = page, isLoadMore = false) => {
+    if (isLoadMore) setIsLoadingMore(true);
+    else if (posts.length === 0) setLoading(true);
+
+    const from = isLoadMore ? pageIndex * POSTS_LIMIT : 0;
+    const to = isLoadMore ? ((pageIndex + 1) * POSTS_LIMIT) - 1 : ((pageIndex + 1) * POSTS_LIMIT) - 1;
+
     const { data } = await supabase
       .from('posts')
       .select(`
@@ -475,9 +502,11 @@ export default function MainDashboardClient() {
         profiles:user_id ( id, username, full_name, avatar_url ),
         likes ( user_id ),
         comments ( id, content, created_at, profiles:user_id ( id, username, avatar_url ) ),
-        saved_posts ( user_id )
+        saved_posts ( user_id ),
+        post_views ( user_id )
       `)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .range(from, to);
 
     if (data) {
       const formattedPosts = data.map((p: any) => {
@@ -495,10 +524,8 @@ export default function MainDashboardClient() {
             }
           }
         }
-
         const likesCount = Array.isArray(p.likes) ? p.likes.length : 0;
         const commentsCount = Array.isArray(p.comments) ? p.comments.length : 0;
-
         return {
           id: p.id,
           author: p.profiles?.username || p.profiles?.full_name || 'Creator',
@@ -511,7 +538,8 @@ export default function MainDashboardClient() {
           comments: Array.isArray(p.comments) ? p.comments : [],
           commentsCount: commentsCount,
           caption: p.content,
-          views: Math.max(likesCount * 3 + commentsCount * 5 + 12, 1),
+          views: Array.isArray(p.post_views) ? p.post_views.length : 0,
+          post_views: Array.isArray(p.post_views) ? p.post_views : [],
           isLiked: userId && Array.isArray(p.likes) ? p.likes.some((l: any) => l.user_id === userId) : false,
           isBookmarked: userId && Array.isArray(p.saved_posts) ? p.saved_posts.some((s: any) => s.user_id === userId) : false,
           showComments: false,
@@ -520,9 +548,25 @@ export default function MainDashboardClient() {
           created_at: p.created_at
         };
       });
-      setPosts(formattedPosts);
+
+      if (isLoadMore) {
+        setPosts(prev => {
+          const newPosts = [...prev];
+          formattedPosts.forEach(p => {
+            if (!newPosts.find(np => np.id === p.id)) newPosts.push(p);
+          });
+          return newPosts;
+        });
+        setHasMorePosts(data.length === POSTS_LIMIT);
+      } else {
+        setPosts(formattedPosts);
+        if (pageIndex === 0) {
+          setHasMorePosts(data.length === POSTS_LIMIT);
+        }
+      }
     }
     setLoading(false);
+    setIsLoadingMore(false);
   };
 
   useEffect(() => {
@@ -651,25 +695,36 @@ export default function MainDashboardClient() {
     try {
       let finalFile = file;
       let type = 'image';
-      if (file.type.startsWith('image/')) {
+      const isVideo = ['video/mp4', 'video/quicktime', 'video/webm'].includes(file.type);
+      const isImage = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(file.type);
+
+      if (!isVideo && !isImage) {
+        alert("Unsupported file type. Allowed types: JPG, PNG, WEBP, MP4, MOV, WEBM.");
+        return;
+      }
+      
+      if (file.size > 100 * 1024 * 1024) {
+        alert("File exceeds the 100MB limit.");
+        return;
+      }
+
+      if (isImage) {
         finalFile = await compressImage(file, 1080);
-      } else if (file.type.startsWith('video/')) {
+      } else if (isVideo) {
         type = 'video';
-      } else {
-        throw new Error('Unsupported file type');
       }
 
       const fileExt = finalFile.name.split('.').pop();
-      const fileName = `${user.id}-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
       
       const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('media')
-        .upload(fileName, finalFile);
+        .from('story-media')
+        .upload(fileName, finalFile, { upsert: false });
 
       if (uploadError) throw uploadError;
 
       const { data: { publicUrl } } = supabase.storage
-        .from('media')
+        .from('story-media')
         .getPublicUrl(uploadData.path);
 
       await supabase.from('stories').insert({
@@ -791,6 +846,7 @@ export default function MainDashboardClient() {
     if (!reelId) return;
     if (currentTime > 3 && !viewedReelIds[reelId]) {
       setViewedReelIds(prev => ({ ...prev, [reelId]: true }));
+      supabase.from("post_views").insert({ post_id: reelId, user_id: user?.id }).then();
       setPosts(prev => prev.map(p => p.id === reelId ? { ...p, views: (p.views || 0) + 1 } : p));
     }
   };
@@ -838,13 +894,9 @@ export default function MainDashboardClient() {
   const totalUserCommentsCount = userOwnPosts.reduce((acc, p) => acc + (p.commentsCount || 0), 0);
   const totalUserViewsCount = userOwnPosts.reduce((acc, p) => acc + (p.views || 0), 0);
   
-  const estimatedReachCount = Math.round(totalUserViewsCount * 0.75);
-  const userEngagementRate = totalUserViewsCount > 0 
-    ? (((totalUserLikesCount + totalUserCommentsCount) / totalUserViewsCount) * 100).toFixed(1)
-    : '0.0';
-  const estimatedEarnings = totalUserViewsCount > 0 
-    ? (totalUserViewsCount * 0.005).toFixed(2)
-    : '0.00';
+  const estimatedReachCount = new Set(userOwnPosts.flatMap(p => (p.post_views || []).map((v: any) => v.user_id))).size;
+  const userEngagementRate = totalUserViewsCount > 0 ? (((totalUserLikesCount + totalUserCommentsCount) / totalUserViewsCount) * 100).toFixed(1) : "0.0";
+  const estimatedEarnings = "0.00";
 
   return (
     <div className={`min-h-screen font-sans pb-16 sm:pb-0 transition-colors duration-200 ${isDarkMode ? 'bg-zinc-950 text-zinc-50' : 'bg-zinc-100 text-zinc-900'}`}>
@@ -934,7 +986,7 @@ export default function MainDashboardClient() {
                         <Loader2 className="w-6 h-6 text-zinc-900 animate-spin" />
                       </div>
                     ) : null}
-                    <img referrerPolicy="no-referrer" src={profile?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp'} alt="Your Story" className="w-full h-full object-cover" />
+                    <Image width={500} height={500} referrerPolicy="no-referrer" src={profile?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp'} alt="Your Story" className="w-full h-full object-cover" />
                   </div>
                   <div className="absolute bottom-0 right-0 bg-indigo-600 rounded-full w-5 h-5 flex items-center justify-center border-2 border-zinc-950">
                     <span className="text-white text-xs leading-none font-bold">+</span>
@@ -954,7 +1006,7 @@ export default function MainDashboardClient() {
                 <div key={story.id} className="flex flex-col items-center gap-1 min-w-[72px] cursor-pointer" onClick={() => window.open(story.media_url, '_blank')}>
                   <div className={`relative rounded-full p-[2px] ${story.hasUnseen ? 'bg-gradient-to-tr from-blue-500 via-indigo-500 to-purple-500' : 'bg-zinc-800'}`}>
                     <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-zinc-950">
-                      <img referrerPolicy="no-referrer" src={story.avatar} alt={story.author} className="w-full h-full object-cover" />
+                      <Image width={500} height={500} referrerPolicy="no-referrer" src={story.avatar} alt={story.author} className="w-full h-full object-cover" />
                     </div>
                   </div>
                   <span className={`text-xs truncate w-full text-center ${isDarkMode ? 'text-zinc-300' : 'text-zinc-600'}`}>{story.author}</span>
@@ -981,7 +1033,8 @@ export default function MainDashboardClient() {
                   </button>
                 </div>
               ) : (
-                posts.map(post => (
+                <>
+                {posts.map(post => (
                   <article key={post.id} className={`pb-4 border-b last:border-0 ${isDarkMode ? 'bg-zinc-950 border-zinc-900' : 'bg-white border-zinc-200'}`}>
                     
                     {/* Header */}
@@ -991,7 +1044,7 @@ export default function MainDashboardClient() {
                         className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
                       >
                         <div className="w-8 h-8 rounded-full overflow-hidden border border-zinc-800">
-                          <img referrerPolicy="no-referrer" src={post.avatar} alt={post.author} className="w-full h-full object-cover" />
+                          <Image width={500} height={500} referrerPolicy="no-referrer" src={post.avatar} alt={post.author} className="w-full h-full object-cover" />
                         </div>
                         <div>
                           <h3 className="font-semibold text-sm">{post.author}</h3>
@@ -1018,7 +1071,7 @@ export default function MainDashboardClient() {
                         {post.type === 'video' || post.type === 'reel' ? (
                           <video src={post.image} className="w-full h-full object-cover" controls loop />
                         ) : (
-                          <img referrerPolicy="no-referrer" src={post.image} alt="Post content" className="w-full h-full object-cover cursor-pointer" />
+                          <Image width={500} height={500} referrerPolicy="no-referrer" src={post.image} alt="Post content" className="w-full h-full object-cover cursor-pointer" />
                         )}
                       </div>
                     )}
@@ -1043,13 +1096,6 @@ export default function MainDashboardClient() {
                       </div>
                       
                       <div className="font-semibold text-sm mb-1">{post.likes.toLocaleString()} likes</div>
-                      
-                      {(post.type === 'video' || post.type === 'reel') && (
-                        <div className="text-xs font-semibold text-zinc-400 mb-1 flex items-center gap-1.5">
-                          <Eye className="w-3.5 h-3.5 text-indigo-400" />
-                          <span>👁 {(post.views || 0).toLocaleString()} Views</span>
-                        </div>
-                      )}
 
                       <div className="text-sm mb-1">
                         <span 
@@ -1058,40 +1104,41 @@ export default function MainDashboardClient() {
                         >
                           {post.author}
                         </span>
-                        <span className="break-words">{post.caption}</span>
+                        <span>{post.caption}</span>
                       </div>
                       
                       {post.commentsCount > 0 && (
-                        <button 
+                        <div 
+                          className="text-zinc-500 text-sm cursor-pointer hover:underline mb-1"
                           onClick={() => handleToggleComments(post.id)} 
-                          className="text-zinc-400 text-sm hover:opacity-70"
                         >
-                          {post.showComments ? 'Hide comments' : `View all ${post.commentsCount} comments`}
-                        </button>
+                          View all {post.commentsCount} comments
+                        </div>
                       )}
 
                       {post.showComments && (
-                        <div className="mt-2 space-y-2 mb-3">
-                          {post.comments.map((comment: any) => (
-                            <div key={comment.id} className="text-sm flex items-start">
-                              <span className="font-semibold mr-2 cursor-pointer hover:opacity-70 shrink-0">
+                        <div className="space-y-3 mt-2 mb-3 px-1">
+                          {post.comments.map((comment: any, idx: number) => (
+                            <div key={idx} className="flex gap-2 text-sm">
+                              <span 
+                                onClick={() => openUserProfile(comment.profiles?.id)} 
+                                className="font-semibold cursor-pointer hover:underline"
+                              >
                                 {comment.profiles?.username || 'user'}
                               </span>
-                              <span className="break-words">{comment.content}</span>
+                              <span className="text-zinc-300">{comment.content}</span>
                             </div>
                           ))}
                         </div>
                       )}
 
                       <div className="flex items-center gap-3 mt-3">
-                        <div className="w-6 h-6 rounded-full bg-zinc-800 overflow-hidden shrink-0">
-                          <img referrerPolicy="no-referrer" src={profile?.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} alt="Profile" className="w-full h-full object-cover" />
-                        </div>
+                        <Image width={500} height={500} referrerPolicy="no-referrer" src={user?.user_metadata?.avatar_url || profile?.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} alt="You" className="w-7 h-7 rounded-full object-cover" />
                         <input 
                           type="text" 
                           placeholder="Add a comment..." 
-                          className="flex-1 text-sm bg-transparent border-none outline-none placeholder-gray-500" 
-                          value={post.newComment || ''}
+                          className={`flex-1 bg-transparent text-sm focus:outline-none ${isDarkMode ? 'text-white' : 'text-black'}`}
+                          value={post.newComment}
                           onChange={(e) => handleCommentChange(post.id, e.target.value)}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') submitComment(post.id, post.newComment);
@@ -1107,7 +1154,17 @@ export default function MainDashboardClient() {
                       </div>
                     </div>
                   </article>
-                ))
+                ))}
+                {hasMorePosts && (
+                  <div className="py-6 text-center" ref={loadMoreRef}>
+                    {isLoadingMore ? (
+                      <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                    ) : (
+                      <span className="text-xs font-bold text-zinc-500">Scroll for more</span>
+                    )}
+                  </div>
+                )}
+                </>
               )}
             </div>
           </>
@@ -1117,42 +1174,23 @@ export default function MainDashboardClient() {
         {viewMode === 'search' && (
           <div className="px-4 py-2 space-y-6">
             
-            {/* Large Search Bar */}
-            <div className={`sticky top-16 z-30 p-2 rounded-2xl border shadow-lg flex items-center gap-3 ${isDarkMode ? 'bg-zinc-900 border-zinc-800 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-900'}`}>
-              <Search className="w-6 h-6 text-indigo-400 shrink-0 ml-1" />
-              <input 
-                type="text" 
-                placeholder="Search users, hashtags, reels, posts..." 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-transparent outline-none text-base font-medium placeholder-zinc-500"
-                autoFocus
-              />
-              {searchQuery && (
-                <button onClick={() => setSearchQuery('')} className="p-1 text-zinc-400 hover:text-zinc-200">
-                  <X className="w-5 h-5" />
-                </button>
-              )}
-            </div>
-
-            {/* Real-time Search Results */}
-            {searchQuery && (
-              <div className="space-y-6">
-                {searchLoading ? (
-                  <div className="py-8 flex justify-center"><Loader2 className="w-6 h-6 text-indigo-400 animate-spin" /></div>
-                ) : (
-                  <>
-                    {/* Matching Profiles */}
-                    <div className="space-y-3">
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-400">Matching Profiles ({searchResults.profiles.length})</h3>
-                      {searchResults.profiles.length === 0 ? (
+            {/* Real Search Results from Supabase Profiles/Posts */}
+            {searchQuery && !searchLoading && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                
+                {/* Profiles Match */}
+                <div className="space-y-3">
+                  <h3 className="font-bold text-xs uppercase text-zinc-400 tracking-wider flex items-center gap-1.5">
+                    <Users className="w-4 h-4" /> Users
+                  </h3>
+                  {searchResults.profiles.length === 0 ? (
                         <div className="text-xs text-zinc-500">No matching user accounts found.</div>
                       ) : (
                         <div className="space-y-2">
                           {searchResults.profiles.map(p => (
                             <div key={p.id} className={`p-3 rounded-xl border flex items-center justify-between ${isDarkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
                               <div className="flex items-center gap-3">
-                                <img referrerPolicy="no-referrer" src={p.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} alt={p.username} className="w-10 h-10 rounded-full object-cover border border-zinc-700" />
+                                <Image width={500} height={500} referrerPolicy="no-referrer" src={p.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} alt={p.username} className="w-10 h-10 rounded-full object-cover border border-zinc-700" />
                                 <div>
                                   <div className="font-semibold text-sm">{p.full_name || p.username}</div>
                                   <div className="text-xs text-indigo-400">@{p.username}</div>
@@ -1193,8 +1231,7 @@ export default function MainDashboardClient() {
                         </div>
                       )}
                     </div>
-                  </>
-                )}
+                  
               </div>
             )}
 
@@ -1288,7 +1325,7 @@ export default function MainDashboardClient() {
                         }`}
                       >
                         <div className="flex items-center gap-3">
-                          <img referrerPolicy="no-referrer" src={sUser.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} alt={sUser.username} className="w-10 h-10 rounded-full object-cover border border-zinc-700" />
+                          <Image width={500} height={500} referrerPolicy="no-referrer" src={sUser.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} alt={sUser.username} className="w-10 h-10 rounded-full object-cover border border-zinc-700" />
                           <div>
                             <div className="font-semibold text-sm">{sUser.full_name || sUser.username}</div>
                             <div className="text-xs text-indigo-400">@{sUser.username}</div>
@@ -1381,7 +1418,7 @@ export default function MainDashboardClient() {
               {/* 1) Large Cover Banner at the top */}
               <div className="relative w-full h-44 sm:h-56 rounded-2xl overflow-hidden border border-zinc-800 shadow-xl group">
                 {displayProf?.cover_url ? (
-                  <img 
+                  <Image width={500} height={500} 
                     referrerPolicy="no-referrer" 
                     src={displayProf.cover_url} 
                     alt="Profile Banner" 
@@ -1415,7 +1452,7 @@ export default function MainDashboardClient() {
                   {/* Overlapping Profile Photo */}
                   <div className="relative group">
                     <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden p-[3px] bg-gradient-to-tr from-blue-500 via-indigo-500 to-purple-500 shadow-2xl ring-4 ring-zinc-950">
-                      <img 
+                      <Image width={500} height={500} 
                         referrerPolicy="no-referrer" 
                         src={displayProf?.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} 
                         alt="Profile Avatar" 
@@ -1666,7 +1703,7 @@ export default function MainDashboardClient() {
                       {p.type === 'video' || p.type === 'reel' ? (
                         <video src={p.image} className="w-full h-full object-cover" />
                       ) : p.image ? (
-                        <img referrerPolicy="no-referrer" src={p.image} alt="Post item" className="w-full h-full object-cover" loading="lazy" />
+                        <Image width={500} height={500} referrerPolicy="no-referrer" src={p.image} alt="Post item" className="w-full h-full object-cover" loading="lazy" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center p-3 text-xs text-zinc-300 text-center bg-zinc-900 font-medium">
                           {p.caption?.substring(0, 35) || 'Text post'}
@@ -1707,7 +1744,7 @@ export default function MainDashboardClient() {
             <div className={`p-4 rounded-xl border flex items-center justify-between ${isDarkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-full overflow-hidden border border-zinc-700">
-                  <img referrerPolicy="no-referrer" src={profile?.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} alt="Profile" className="w-full h-full object-cover" />
+                  <Image width={500} height={500} referrerPolicy="no-referrer" src={profile?.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} alt="Profile" className="w-full h-full object-cover" />
                 </div>
                 <div>
                   <div className="font-semibold text-sm">{profile?.full_name || profile?.username || 'User Account'}</div>
@@ -1953,7 +1990,7 @@ export default function MainDashboardClient() {
             }`}
             title="Profile"
           >
-            <img referrerPolicy="no-referrer" src={profile?.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} alt="Profile" className="w-full h-full object-cover" />
+            <Image width={500} height={500} referrerPolicy="no-referrer" src={profile?.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} alt="Profile" className="w-full h-full object-cover" />
           </button>
         </div>
       </nav>
@@ -2062,7 +2099,7 @@ export default function MainDashboardClient() {
               ) : (
                 notificationsList.map(item => (
                   <div key={item.id} className="p-3 rounded-xl bg-zinc-900 border border-zinc-800/80 flex items-center gap-3">
-                    <img referrerPolicy="no-referrer" src={item.actor?.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} alt="User" className="w-9 h-9 rounded-full object-cover border border-zinc-700" />
+                    <Image width={500} height={500} referrerPolicy="no-referrer" src={item.actor?.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} alt="User" className="w-9 h-9 rounded-full object-cover border border-zinc-700" />
                     <div className="flex-1 text-xs">
                       <span className="font-bold text-white">@{item.actor?.username || 'user'}</span>{' '}
                       <span className="text-zinc-300">
@@ -2103,7 +2140,7 @@ export default function MainDashboardClient() {
                     onClick={() => setSelectedChatUser(su)}
                     className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center gap-3 cursor-pointer hover:bg-zinc-800/80 transition-colors"
                   >
-                    <img referrerPolicy="no-referrer" src={su.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} alt="User" className="w-9 h-9 rounded-full object-cover border border-zinc-700" />
+                    <Image width={500} height={500} referrerPolicy="no-referrer" src={su.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} alt="User" className="w-9 h-9 rounded-full object-cover border border-zinc-700" />
                     <div>
                       <div className="font-bold text-xs">{su.full_name || su.username}</div>
                       <div className="text-[11px] text-indigo-400">@{su.username}</div>
@@ -2115,7 +2152,7 @@ export default function MainDashboardClient() {
               <div className="flex-1 flex flex-col space-y-3">
                 <div className="flex items-center justify-between p-2 rounded-xl bg-zinc-900 border border-zinc-800">
                   <div className="flex items-center gap-2">
-                    <img referrerPolicy="no-referrer" src={selectedChatUser.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} alt="User" className="w-7 h-7 rounded-full" />
+                    <Image width={500} height={500} referrerPolicy="no-referrer" src={selectedChatUser.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} alt="User" className="w-7 h-7 rounded-full" />
                     <span className="font-bold text-xs">@{selectedChatUser.username}</span>
                   </div>
                   <button onClick={() => setSelectedChatUser(null)} className="text-xs text-indigo-400 font-semibold hover:underline">Change</button>
@@ -2384,7 +2421,7 @@ export default function MainDashboardClient() {
                       <div key={p.id} className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           {p.image ? (
-                            <img referrerPolicy="no-referrer" src={p.image} alt="Media" className="w-10 h-10 rounded-lg object-cover" />
+                            <Image width={500} height={500} referrerPolicy="no-referrer" src={p.image} alt="Media" className="w-10 h-10 rounded-lg object-cover" />
                           ) : (
                             <div className="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center text-xs text-zinc-400 font-bold">TXT</div>
                           )}

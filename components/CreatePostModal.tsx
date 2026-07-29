@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import { useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { X, Image as ImageIcon, Video, Loader2, MapPin, Tag, Globe, Lock, Users, ShieldAlert, CheckCircle2, FileText, AlertCircle } from "lucide-react";
@@ -69,15 +70,15 @@ export default function CreatePostModal({
     // Validate type and size
     const validFiles: File[] = [];
     for (const file of selectedFiles) {
-      const isVideo = file.type.startsWith("video/mp4") || file.type.startsWith("video/quicktime") || file.type.startsWith("video/webm");
-      const isImage = file.type.startsWith("image/");
+      const isVideo = ['video/mp4', 'video/quicktime', 'video/webm'].includes(file.type);
+      const isImage = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(file.type);
 
       if (!isVideo && !isImage) {
-        setError(`Unsupported file type: "${file.name}". Please upload MP4/WebM videos or standard images.`);
+        setError(`Unsupported file type: "${file.name}". Allowed types: JPG, PNG, WEBP, MP4, MOV, WEBM.`);
         continue;
       }
-      if (file.size > 50 * 1024 * 1024) {
-        setError(`File "${file.name}" exceeds the 50MB limit.`);
+      if (file.size > 100 * 1024 * 1024) {
+        setError(`File "${file.name}" exceeds the 100MB limit.`);
         continue;
       }
 
@@ -118,10 +119,10 @@ export default function CreatePostModal({
 
   const uploadFile = async (file: File): Promise<string> => {
     const fileExt = file.name.split(".").pop();
-    const fileName = `${user.id}-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+    const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
 
     const { data, error } = await supabase.storage
-      .from("media")
+      .from("post-media")
       .upload(fileName, file, {
         upsert: false,
         cacheControl: "3600",
@@ -131,7 +132,7 @@ export default function CreatePostModal({
 
     const {
       data: { publicUrl },
-    } = supabase.storage.from("media").getPublicUrl(data.path);
+    } = supabase.storage.from("post-media").getPublicUrl(data.path);
 
     return publicUrl;
   };
@@ -290,7 +291,7 @@ export default function CreatePostModal({
           {/* User & Caption */}
           <div className="flex gap-3">
             <div className="w-10 h-10 rounded-full bg-zinc-800 overflow-hidden flex-shrink-0 border border-zinc-700">
-              <img
+              <Image width={500} height={500}
                 src={
                   user?.user_metadata?.avatar_url ||
                   user?.avatar_url ||
@@ -325,7 +326,7 @@ export default function CreatePostModal({
                       preload="metadata"
                     />
                   ) : (
-                    <img
+                    <Image width={500} height={500}
                       src={preview.url}
                       alt="Preview"
                       className="w-full h-full object-cover"
