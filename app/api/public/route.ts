@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
+export const dynamic = 'force-dynamic';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
@@ -16,11 +18,11 @@ export async function GET() {
     const { data, error } = await supabaseAdmin.from('posts').select('*').limit(10);
     
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500, headers: corsHeaders });
+      return NextResponse.json({ data: [], error: error.message }, { headers: corsHeaders });
     }
     
     return NextResponse.json({ data }, { headers: corsHeaders });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500, headers: corsHeaders });
+    return NextResponse.json({ data: [], error: err instanceof Error ? err.message : 'Unknown error' }, { headers: corsHeaders });
   }
 }
