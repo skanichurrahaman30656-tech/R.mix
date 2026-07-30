@@ -1,7 +1,8 @@
 "use client";
+import { ReelCardItem } from './reels/ReelCardItem';
 import Image from "next/image";
-import { VideoPlayer } from "./VideoPlayer";
-import { StoryViewer } from "./StoryViewer";
+import { VideoPlayer } from "./shared/VideoPlayer";
+import { StoryViewer } from "./story/StoryViewer";
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -17,224 +18,14 @@ import {
   Zap, Briefcase, Send
 } from 'lucide-react';
 
-import CreatePostModal from './CreatePostModal';
-import EditProfileModal from './EditProfileModal';
+import CreatePostModal from './shared/CreatePostModal';
+import { FeedPage } from './feed/FeedPage';
+import { SearchPage } from './search/SearchPage';
+import { ReelsPage } from './reels/ReelsPage';
+import EditProfileModal from './shared/EditProfileModal';
+import { SettingsSystem } from "./settings/SettingsSystem";
 import { compressImage } from '@/lib/compress';
-import { SettingsSystem } from './SettingsSystem';
 
-function ReelCardItem({
-  reelItem,
-  activeReelId,
-  setActiveReelId,
-  isReelsMuted,
-  setIsReelsMuted,
-  handleReelTimeUpdate,
-  toggleFollow,
-  followedUsers,
-  handleLike,
-  handleShare,
-  handleToggleComments,
-  handleBookmark,
-  openUserProfile,
-  user
-}: any) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const cardRef = useRef<HTMLDivElement>(null);
-
-  const isActive = activeReelId === reelItem.id;
-
-  useEffect(() => {
-    const el = cardRef.current;
-    if (!el) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
-            setActiveReelId(reelItem.id);
-          }
-        });
-      },
-      { threshold: 0.5 }
-    );
-
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [reelItem.id, setActiveReelId]);
-
-  useEffect(() => {
-    const vid = videoRef.current;
-    if (!vid) return;
-
-    if (isActive) {
-      vid.play().catch(() => {});
-    } else {
-      vid.pause();
-    }
-  }, [isActive]);
-
-  const isFollowing = followedUsers[reelItem.user_id] || followedUsers[reelItem.author] || false;
-  const mediaSrc = reelItem.image || reelItem.media_url || 'https://assets.mixkit.co/videos/preview/mixkit-tree-branches-in-the-breeze-1187-large.mp4';
-
-  return (
-    <div 
-      ref={cardRef}
-      key={reelItem.id} 
-      className="snap-start h-full min-h-[540px] max-h-[720px] my-2 relative rounded-2xl overflow-hidden bg-black text-white flex flex-col justify-end p-4 border border-zinc-800 shadow-2xl group"
-    >
-      <VideoPlayer 
-        ref={videoRef}
-        src={mediaSrc} 
-        className="absolute inset-0 w-full h-full object-cover z-0 cursor-pointer" 
-        loop 
-        muted={isReelsMuted} 
-        playsInline 
-        preload="metadata"
-        onTimeUpdate={(e) => handleReelTimeUpdate(reelItem.id, (e.target as HTMLVideoElement).currentTime)}
-        onClick={() => setIsReelsMuted(!isReelsMuted)}
-        controls={false}
-      />
-
-      {/* Sound Indicator Badge Overlay */}
-      <button 
-        onClick={() => setIsReelsMuted(!isReelsMuted)}
-        className="absolute top-4 left-4 z-20 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md text-white border border-white/20 flex items-center gap-2 text-xs font-semibold hover:bg-black/80 transition-all shadow-lg"
-      >
-        {isReelsMuted ? (
-          <>
-            <VolumeX className="w-4 h-4 text-red-400" />
-            <span>Muted (Tap for Sound)</span>
-          </>
-        ) : (
-          <>
-            <Volume2 className="w-4 h-4 text-emerald-400 animate-pulse" />
-            <span>Sound On</span>
-          </>
-        )}
-      </button>
-
-      {/* Gradient Overlay */}
-      <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80 z-10 pointer-events-none" />
-
-      {/* Left Bottom Details Overlay */}
-      <div className="relative z-20 space-y-3 max-w-[80%]">
-        <div className="flex items-center gap-3">
-          <div 
-            onClick={() => openUserProfile(reelItem.user_id)} 
-            className="w-10 h-10 rounded-full overflow-hidden border-2 border-indigo-500 shadow cursor-pointer hover:opacity-80"
-          >
-            <Image width={500} height={500} referrerPolicy="no-referrer" src={reelItem.avatar || "https://picsum.photos/seed/user/100/100"} alt="Reel Author" className="w-full h-full object-cover" loading="lazy" />
-          </div>
-          <div>
-            <div 
-              onClick={() => openUserProfile(reelItem.user_id)} 
-              className="font-bold text-sm tracking-tight drop-shadow cursor-pointer hover:underline"
-            >
-              @{reelItem.author || 'creator'}
-            </div>
-          </div>
-          {reelItem.user_id !== user?.id && (
-            <button 
-              onClick={() => toggleFollow(reelItem.user_id || reelItem.author)}
-              className={`px-3 py-1 rounded-full text-xs font-bold transition-all shadow ${
-                isFollowing 
-                  ? 'bg-zinc-800 text-zinc-300 border border-zinc-700' 
-                  : 'bg-indigo-600 hover:bg-indigo-500 text-white'
-              }`}
-            >
-              {isFollowing ? 'Following' : 'Follow'}
-            </button>
-          )}
-        </div>
-
-        <p className="text-xs sm:text-sm text-zinc-100 leading-snug drop-shadow line-clamp-2">
-          {reelItem.caption || reelItem.content || 'Trending Reel'}
-        </p>
-
-        <div className="flex items-center gap-2 text-xs text-indigo-300 font-medium">
-          <Music className="w-3.5 h-3.5 animate-spin" style={{ animationDuration: '4s' }} />
-          <span className="truncate">Original Sound - @{reelItem.author || 'creator'}</span>
-        </div>
-      </div>
-
-      {/* Right Sidebar Interactive Actions */}
-      <div className="absolute right-3 bottom-12 z-20 flex flex-col items-center gap-5">
-        
-        {/* Sound Toggle */}
-        <button 
-          onClick={() => setIsReelsMuted(!isReelsMuted)}
-          className="flex flex-col items-center group"
-          title={isReelsMuted ? "Unmute Sound" : "Mute Sound"}
-        >
-          <div className={`p-3 rounded-full backdrop-blur-md border transition-colors ${isReelsMuted ? 'bg-red-500/20 border-red-500/40 text-red-400' : 'bg-black/40 border-white/10 text-white'}`}>
-            {isReelsMuted ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
-          </div>
-          <span className="text-[11px] font-bold mt-1 drop-shadow">
-            {isReelsMuted ? "Unmute" : "Sound"}
-          </span>
-        </button>
-
-        {/* Like */}
-        <button 
-          onClick={() => handleLike(reelItem.id, reelItem.isLiked)}
-          className="flex flex-col items-center group"
-        >
-          <div className="p-3 rounded-full bg-black/40 backdrop-blur-md border border-white/10 group-hover:bg-black/60 transition-colors">
-            <Heart className={`w-6 h-6 transition-transform group-active:scale-125 ${reelItem.isLiked ? 'fill-red-500 text-red-500' : 'text-white'}`} />
-          </div>
-          <span className="text-[11px] font-bold mt-1 drop-shadow">
-            {(reelItem.likes || 0).toLocaleString()}
-          </span>
-        </button>
-
-        {/* Comment */}
-        <button 
-          onClick={() => handleToggleComments(reelItem.id)}
-          className="flex flex-col items-center group"
-        >
-          <div className="p-3 rounded-full bg-black/40 backdrop-blur-md border border-white/10 group-hover:bg-black/60 transition-colors">
-            <MessageCircle className="w-6 h-6 text-white" />
-          </div>
-          <span className="text-[11px] font-bold mt-1 drop-shadow">
-            {reelItem.commentsCount || 0}
-          </span>
-        </button>
-
-        {/* Share */}
-        <button 
-          onClick={() => handleShare(reelItem.id)}
-          className="flex flex-col items-center group"
-        >
-          <div className="p-3 rounded-full bg-black/40 backdrop-blur-md border border-white/10 group-hover:bg-black/60 transition-colors">
-            <Share2 className="w-6 h-6 text-white" />
-          </div>
-          <span className="text-[11px] font-bold mt-1 drop-shadow">
-            Share
-          </span>
-        </button>
-
-        {/* Save */}
-        <button 
-          onClick={() => handleBookmark(reelItem.id, reelItem.isBookmarked)}
-          className="flex flex-col items-center group"
-        >
-          <div className="p-3 rounded-full bg-black/40 backdrop-blur-md border border-white/10 group-hover:bg-black/60 transition-colors">
-            <Bookmark className={`w-6 h-6 transition-colors ${reelItem.isBookmarked ? 'fill-white text-white' : 'text-white'}`} />
-          </div>
-          <span className="text-[11px] font-bold mt-1 drop-shadow">
-            Save
-          </span>
-        </button>
-
-        {/* Music Disc */}
-        <div className="w-9 h-9 rounded-full bg-zinc-900 border-2 border-indigo-400 overflow-hidden flex items-center justify-center animate-spin mt-1" style={{ animationDuration: '6s' }}>
-          <Music className="w-4 h-4 text-indigo-400" />
-        </div>
-
-      </div>
-    </div>
-  );
-}
 
 export default function MainDashboardClient() {
   const router = useRouter();
@@ -249,6 +40,7 @@ export default function MainDashboardClient() {
   const POSTS_LIMIT = 5;
   const [stories, setStories] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [sharePostId, setSharePostId] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<{ profiles: any[]; posts: any[] }>({ profiles: [], posts: [] });
   const [suggestedUsers, setSuggestedUsers] = useState<any[]>([]);
   const [notificationsList, setNotificationsList] = useState<any[]>([]);
@@ -308,6 +100,11 @@ export default function MainDashboardClient() {
     return () => observer.disconnect();
   }, [hasMorePosts, isLoadingMore, loading, user]);
 
+  
+  const handleStoryClick = (storyId: string) => {
+    const idx = stories.findIndex((s: any) => s.id === storyId);
+    if (idx !== -1) setSelectedStoryIndex(idx);
+  };
   const openUserProfile = async (targetUserId: string) => {
     if (!targetUserId) return;
     if (targetUserId === user?.id) {
@@ -492,17 +289,25 @@ export default function MainDashboardClient() {
       .order('created_at', { ascending: false });
     
     if (data) {
-      const formatted = data.map((s: any) => ({
+      const formatted = data.map((s: any) => {
+        let mediaUrl = s.media_url;
+        if (typeof s.media_url === 'string' && s.media_url.startsWith('[')) {
+          try {
+            mediaUrl = JSON.parse(s.media_url)[0];
+          } catch (e) {}
+        }
+        return {
         id: s.id,
         author: s.profiles?.username || 'user',
         avatar: s.profiles?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp',
         hasUnseen: true,
-        media_url: s.media_url,
+        media_url: mediaUrl,
         type: s.type,
         user_id: s.user_id,
         created_at: s.created_at,
         isUser: s.profiles?.id === userId
-      }));
+      };
+      });
       setStories(formatted);
     }
   };
@@ -552,8 +357,11 @@ export default function MainDashboardClient() {
           handle: `@${p.profiles?.username || 'user'}`,
           avatar: p.profiles?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp',
           image: mediaList[0] || null,
+          video_url: p.video_url,
+          media_url: p.media_url,
+          image_url: p.image_url,
           media_urls: mediaList,
-          type: p.type,
+          type: p.media_type || p.type,
           likes: likesCount,
           comments: Array.isArray(p.comments) ? p.comments : [],
           commentsCount: commentsCount,
@@ -654,6 +462,9 @@ export default function MainDashboardClient() {
         fetchPosts(user.id);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, () => {
+        fetchPosts(user.id);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'saved_posts' }, () => {
         fetchPosts(user.id);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'followers' }, () => {
@@ -1038,429 +849,66 @@ export default function MainDashboardClient() {
         
         {/* ==================== VIEW MODE 1: GLOBAL HOME FEED ==================== */}
         {viewMode === 'feed' && (
-          <>
-            {/* Stories Bar */}
-            <div className={`flex gap-4 overflow-x-auto px-4 py-2 scrollbar-hide border-b pb-4 mb-4 ${isDarkMode ? 'border-zinc-900' : 'border-zinc-200'}`}>
-              
-              {/* Add Story Button */}
-              <div className="flex flex-col items-center gap-1 min-w-[72px] cursor-pointer" onClick={() => storyInputRef.current?.click()}>
-                <div className="relative rounded-full p-[2px]">
-                  <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-zinc-950 relative">
-                    {storyUploading ? (
-                      <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                        <Loader2 className="w-6 h-6 text-zinc-900 animate-spin" />
-                      </div>
-                    ) : null}
-                    <Image width={500} height={500} referrerPolicy="no-referrer" src={profile?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp'} alt="Your Story" className="w-full h-full object-cover" />
-                  </div>
-                  <div className="absolute bottom-0 right-0 bg-indigo-600 rounded-full w-5 h-5 flex items-center justify-center border-2 border-zinc-950">
-                    <span className="text-white text-xs leading-none font-bold">+</span>
-                  </div>
-                </div>
-                <span className={`text-xs truncate w-full text-center ${isDarkMode ? 'text-zinc-300' : 'text-zinc-600'}`}>Your Story</span>
-                <input 
-                  type="file" 
-                  ref={storyInputRef} 
-                  onChange={handleStoryUpload} 
-                  accept="image/*,video/mp4,video/quicktime" 
-                  className="hidden" 
-                />
-              </div>
-
-              {stories.map(story => (
-                <div key={story.id} className="flex flex-col items-center gap-1 min-w-[72px] cursor-pointer" onClick={() => setSelectedStoryIndex(stories.findIndex(s => s.id === story.id))}>
-                  <div className={`relative rounded-full p-[2px] ${story.hasUnseen ? 'bg-gradient-to-tr from-blue-500 via-indigo-500 to-purple-500' : 'bg-zinc-800'}`}>
-                    <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-zinc-950">
-                      <Image width={500} height={500} referrerPolicy="no-referrer" src={story.avatar} alt={story.author} className="w-full h-full object-cover" />
-                    </div>
-                  </div>
-                  <span className={`text-xs truncate w-full text-center ${isDarkMode ? 'text-zinc-300' : 'text-zinc-600'}`}>{story.author}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Posts Feed - Displays posts from all users */}
-            <div className="space-y-6">
-              {loading ? (
-                <div className="text-center py-10 flex justify-center"><div className="w-8 h-8 border-4 border-zinc-800 border-t-indigo-500 rounded-full animate-spin"></div></div>
-              ) : posts.length === 0 ? (
-                <div className="text-center text-zinc-400 py-12 space-y-3">
-                  <div className="p-4 rounded-full bg-zinc-900/80 w-16 h-16 mx-auto flex items-center justify-center text-indigo-400 border border-zinc-800">
-                    <Sparkles className="w-8 h-8" />
-                  </div>
-                  <div className="font-bold text-lg text-white">No posts in global feed yet</div>
-                  <p className="text-xs text-zinc-500 max-w-xs mx-auto">Be the first creator to share a photo, video, or reel with the community!</p>
-                  <button 
-                    onClick={() => setShowCreateChoiceModal(true)}
-                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full text-xs font-bold shadow-lg"
-                  >
-                    Create First Post
-                  </button>
-                </div>
-              ) : (
-                <>
-                {posts.map(post => (
-                  <article key={post.id} className={`pb-4 border-b last:border-0 ${isDarkMode ? 'bg-zinc-950 border-zinc-900' : 'bg-white border-zinc-200'}`}>
-                    
-                    {/* Header */}
-                    <div className="px-4 py-3 flex items-center justify-between">
-                      <div 
-                        onClick={() => openUserProfile(post.user_id)} 
-                        className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
-                      >
-                        <div className="w-8 h-8 rounded-full overflow-hidden border border-zinc-800">
-                          <Image width={500} height={500} referrerPolicy="no-referrer" src={post.avatar} alt={post.author} className="w-full h-full object-cover" />
-                        </div>
-                        <div>
-                          <h3 className="font-semibold text-sm">{post.author}</h3>
-                          {post.handle && <p className="text-[11px] text-zinc-400">{post.handle}</p>}
-                        </div>
-                      </div>
-                      {post.user_id !== user?.id && (
-                        <button 
-                          onClick={() => toggleFollow(post.user_id)}
-                          className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
-                            followedUsers[post.user_id] || followedUsers[post.author]
-                              ? 'bg-zinc-800 text-zinc-300 border border-zinc-700'
-                              : 'bg-indigo-600 text-white hover:bg-indigo-500'
-                          }`}
-                        >
-                          {followedUsers[post.user_id] || followedUsers[post.author] ? 'Following' : 'Follow'}
-                        </button>
-                      )}
-                    </div>
-                    
-                    {/* Media */}
-                    {post.image && (
-                      <div className="aspect-square bg-zinc-900 relative rounded-md overflow-hidden mx-4 my-2 border border-zinc-800/50" onDoubleClick={() => handleLike(post.id, post.isLiked)}>
-                        {post.type === 'video' || post.type === 'reel' ? (
-                          <VideoPlayer src={post.image} className="w-full h-full" controls loop autoPlay />
-                        ) : (
-                          <Image width={500} height={500} referrerPolicy="no-referrer" src={post.image} alt="Post content" className="w-full h-full object-cover cursor-pointer" />
-                        )}
-                      </div>
-                    )}
-
-                    {/* Actions */}
-                    <div className="px-4 pt-3 pb-2">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-4">
-                          <button onClick={() => handleLike(post.id, post.isLiked)} className="hover:opacity-70 transition-opacity">
-                            <Heart className={`w-6 h-6 transition-colors ${post.isLiked ? 'fill-red-500 text-red-500' : ''}`} />
-                          </button>
-                          <button onClick={() => handleToggleComments(post.id)} className="hover:opacity-70 transition-opacity">
-                            <MessageCircle className="w-6 h-6" />
-                          </button>
-                          <button onClick={() => handleShare(post.id)} className="hover:opacity-70 transition-opacity">
-                            <Share2 className="w-6 h-6" />
-                          </button>
-                        </div>
-                        <button onClick={() => handleBookmark(post.id, post.isBookmarked)} className="hover:opacity-70 transition-opacity">
-                          <Bookmark className={`w-6 h-6 transition-colors ${post.isBookmarked ? 'fill-current' : ''}`} />
-                        </button>
-                      </div>
-                      
-                      <div className="font-semibold text-sm mb-1">{post.likes.toLocaleString()} likes</div>
-
-                      <div className="text-sm mb-1">
-                        <span 
-                          onClick={() => openUserProfile(post.user_id)} 
-                          className="font-semibold mr-2 hover:opacity-70 cursor-pointer"
-                        >
-                          {post.author}
-                        </span>
-                        <span>{post.caption}</span>
-                      </div>
-                      
-                      {post.commentsCount > 0 && (
-                        <div 
-                          className="text-zinc-500 text-sm cursor-pointer hover:underline mb-1"
-                          onClick={() => handleToggleComments(post.id)} 
-                        >
-                          View all {post.commentsCount} comments
-                        </div>
-                      )}
-
-                      {post.showComments && (
-                        <div className="space-y-3 mt-2 mb-3 px-1">
-                          {post.comments.map((comment: any, idx: number) => (
-                            <div key={idx} className="flex gap-2 text-sm">
-                              <span 
-                                onClick={() => openUserProfile(comment.profiles?.id)} 
-                                className="font-semibold cursor-pointer hover:underline"
-                              >
-                                {comment.profiles?.username || 'user'}
-                              </span>
-                              <span className="text-zinc-300">{comment.content}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      <div className="flex items-center gap-3 mt-3">
-                        <Image width={500} height={500} referrerPolicy="no-referrer" src={user?.user_metadata?.avatar_url || profile?.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} alt="You" className="w-7 h-7 rounded-full object-cover" />
-                        <input 
-                          type="text" 
-                          placeholder="Add a comment..." 
-                          className={`flex-1 bg-transparent text-sm focus:outline-none ${isDarkMode ? 'text-white' : 'text-black'}`}
-                          value={post.newComment}
-                          onChange={(e) => handleCommentChange(post.id, e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') submitComment(post.id, post.newComment);
-                          }}
-                        />
-                        <button 
-                          onClick={() => submitComment(post.id, post.newComment)} 
-                          disabled={!post.newComment?.trim()}
-                          className="text-indigo-400 text-sm font-semibold hover:text-indigo-300 disabled:opacity-50"
-                        >
-                          Post
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-                {hasMorePosts && (
-                  <div className="py-6 text-center" ref={loadMoreRef}>
-                    {isLoadingMore ? (
-                      <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                    ) : (
-                      <span className="text-xs font-bold text-zinc-500">Scroll for more</span>
-                    )}
-                  </div>
-                )}
-                </>
-              )}
-            </div>
-          </>
+          <FeedPage
+            posts={posts}
+            hasMorePosts={hasMorePosts}
+            isLoadingMore={isLoadingMore}
+            loadMoreRef={loadMoreRef}
+            isDarkMode={isDarkMode}
+            user={user}
+            profile={profile}
+            followedUsers={followedUsers}
+            storyUploading={storyUploading}
+            storyInputRef={storyInputRef}
+            handleLike={handleLike}
+            handleToggleComments={handleToggleComments}
+            handleShare={handleShare}
+            handleBookmark={handleBookmark}
+            toggleFollow={toggleFollow}
+            openUserProfile={openUserProfile}
+            handleCommentChange={handleCommentChange}
+            submitComment={submitComment}
+            stories={stories}
+            handleStoryClick={handleStoryClick}
+          />
         )}
-
         {/* ==================== VIEW MODE 2: DEDICATED SEARCH PAGE ==================== */}
         {viewMode === 'search' && (
-          <div className="px-4 py-2 space-y-6">
-            
-            {/* Real Search Results from Supabase Profiles/Posts */}
-            {searchQuery && !searchLoading && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                
-                {/* Profiles Match */}
-                <div className="space-y-3">
-                  <h3 className="font-bold text-xs uppercase text-zinc-400 tracking-wider flex items-center gap-1.5">
-                    <Users className="w-4 h-4" /> Users
-                  </h3>
-                  {searchResults.profiles.length === 0 ? (
-                        <div className="text-xs text-zinc-500">No matching user accounts found.</div>
-                      ) : (
-                        <div className="space-y-2">
-                          {searchResults.profiles.map(p => (
-                            <div key={p.id} className={`p-3 rounded-xl border flex items-center justify-between ${isDarkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
-                              <div className="flex items-center gap-3">
-                                <Image width={500} height={500} referrerPolicy="no-referrer" src={p.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} alt={p.username} className="w-10 h-10 rounded-full object-cover border border-zinc-700" />
-                                <div>
-                                  <div className="font-semibold text-sm">{p.full_name || p.username}</div>
-                                  <div className="text-xs text-indigo-400">@{p.username}</div>
-                                  <div className="text-[11px] text-zinc-400 truncate max-w-[180px]">{p.bio || 'Digital Creator'}</div>
-                                </div>
-                              </div>
-                              {p.id !== user?.id && (
-                                <button 
-                                  onClick={() => toggleFollow(p)}
-                                  className={`px-3 py-1.5 rounded-lg font-semibold text-xs transition-colors ${
-                                    followedUsers[p.id] || followedUsers[p.username]
-                                      ? 'bg-zinc-800 text-zinc-300 border border-zinc-700'
-                                      : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow'
-                                  }`}
-                                >
-                                  {followedUsers[p.id] || followedUsers[p.username] ? 'Following' : 'Follow'}
-                                </button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Matching Posts */}
-                    <div className="space-y-3">
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-purple-400">Matching Posts ({searchResults.posts.length})</h3>
-                      {searchResults.posts.length === 0 ? (
-                        <div className="text-xs text-zinc-500">No matching posts found.</div>
-                      ) : (
-                        <div className="grid grid-cols-2 gap-2">
-                          {searchResults.posts.map(p => (
-                            <div key={p.id} className="p-3 rounded-xl bg-zinc-900 border border-zinc-800 space-y-2">
-                              <div className="text-xs font-bold text-zinc-200">@{p.profiles?.username || 'user'}</div>
-                              <div className="text-xs text-zinc-400 line-clamp-2">{p.content}</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  
-              </div>
-            )}
-
-            {/* Recent Searches */}
-            {!searchQuery && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">Recent Searches</span>
-                  {recentSearches.length > 0 && (
-                    <button onClick={() => { setRecentSearches([]); localStorage.removeItem('rmix_recent_searches'); }} className="text-xs text-indigo-400 font-semibold hover:underline">
-                      Clear all
-                    </button>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {recentSearches.length === 0 ? (
-                    <span className="text-xs text-zinc-500">No recent search history</span>
-                  ) : (
-                    recentSearches.map((item, idx) => (
-                      <div 
-                        key={idx}
-                        onClick={() => setSearchQuery(item)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer flex items-center gap-1.5 border transition-colors ${
-                          isDarkMode ? 'bg-zinc-900 border-zinc-800 text-zinc-200 hover:bg-zinc-800' : 'bg-zinc-200 border-zinc-300 text-zinc-800 hover:bg-zinc-300'
-                        }`}
-                      >
-                        <Clock className="w-3 h-3 text-zinc-400" />
-                        <span>{item}</span>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const next = recentSearches.filter((_, i) => i !== idx);
-                            setRecentSearches(next);
-                            localStorage.setItem('rmix_recent_searches', JSON.stringify(next));
-                          }}
-                          className="hover:text-red-400 ml-1"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Trending Hashtags from Real Database Posts */}
-            {!searchQuery && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-amber-400">
-                  <Flame className="w-4 h-4 fill-amber-400" />
-                  <span>Trending Hashtags</span>
-                </div>
-                {realTrendingHashtags.length === 0 ? (
-                  <div className="text-xs text-zinc-500">No active hashtags in database posts yet.</div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    {realTrendingHashtags.map((tag, idx) => (
-                      <button 
-                        key={idx}
-                        onClick={() => setSearchQuery(tag)}
-                        className={`p-3 rounded-xl border text-left transition-colors flex justify-between items-center ${
-                          isDarkMode ? 'bg-zinc-900/80 border-zinc-800 hover:bg-zinc-800/80' : 'bg-white border-zinc-200 hover:bg-zinc-50'
-                        }`}
-                      >
-                        <div>
-                          <div className="font-bold text-sm text-indigo-400">{tag}</div>
-                          <div className="text-[11px] text-zinc-400">Community Tag</div>
-                        </div>
-                        <ArrowUpRight className="w-4 h-4 text-zinc-500" />
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Suggested Real Users from Database */}
-            {!searchQuery && (
-              <div className="space-y-3">
-                <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">Suggested Community Creators</span>
-                {suggestedUsers.length === 0 ? (
-                  <div className="text-xs text-zinc-500">No other registered users yet.</div>
-                ) : (
-                  <div className="space-y-2">
-                    {suggestedUsers.map(sUser => (
-                      <div 
-                        key={sUser.id}
-                        className={`p-3 rounded-xl border flex items-center justify-between ${
-                          isDarkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Image width={500} height={500} referrerPolicy="no-referrer" src={sUser.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} alt={sUser.username} className="w-10 h-10 rounded-full object-cover border border-zinc-700" />
-                          <div>
-                            <div className="font-semibold text-sm">{sUser.full_name || sUser.username}</div>
-                            <div className="text-xs text-indigo-400">@{sUser.username}</div>
-                            <div className="text-[11px] text-zinc-400 truncate max-w-[180px]">{sUser.bio || 'Digital Creator'}</div>
-                          </div>
-                        </div>
-                        <button 
-                          onClick={() => toggleFollow(sUser)}
-                          className={`px-3 py-1.5 rounded-lg font-semibold text-xs transition-colors ${
-                            followedUsers[sUser.id] || followedUsers[sUser.username]
-                              ? 'bg-zinc-800 text-zinc-300 border border-zinc-700'
-                              : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow'
-                          }`}
-                        >
-                          {followedUsers[sUser.id] || followedUsers[sUser.username] ? 'Following' : 'Follow'}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-          </div>
+          <SearchPage
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            searchLoading={searchLoading}
+            searchResults={searchResults}
+            recentSearches={recentSearches}
+            setRecentSearches={setRecentSearches}
+            realTrendingHashtags={realTrendingHashtags}
+            suggestedUsers={suggestedUsers}
+            followedUsers={followedUsers}
+            toggleFollow={toggleFollow}
+            isDarkMode={isDarkMode}
+          />
         )}
-
         {/* ==================== VIEW MODE 3: DEDICATED REELS PAGE ==================== */}
         {viewMode === 'reels' && (
-          <div className="h-[calc(100vh-3.5rem-4rem)] snap-y snap-mandatory overflow-y-auto scrollbar-hide px-2">
-            {reelsFeed.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">
-                <div className="p-5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
-                  <Film className="w-10 h-10" />
-                </div>
-                <div className="text-xl font-bold text-white">No Reels Uploaded Yet</div>
-                <p className="text-xs text-zinc-400 max-w-xs">Upload your first short video reel to kickstart the Reels feed!</p>
-                <button 
-                  onClick={() => {
-                    setCreateMode('reel');
-                    setShowCreatePost(true);
-                  }}
-                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-full text-xs shadow-lg"
-                >
-                  Create Reel
-                </button>
-              </div>
-            ) : (
-              reelsFeed.map((reelItem: any) => (
-                <ReelCardItem 
-                  key={reelItem.id}
-                  reelItem={reelItem}
-                  activeReelId={activeReelId}
-                  setActiveReelId={setActiveReelId}
-                  isReelsMuted={isReelsMuted}
-                  setIsReelsMuted={setIsReelsMuted}
-                  handleReelTimeUpdate={handleReelTimeUpdate}
-                  toggleFollow={toggleFollow}
-                  followedUsers={followedUsers}
-                  handleLike={handleLike}
-                  handleShare={handleShare}
-                  handleToggleComments={handleToggleComments}
-                  handleBookmark={handleBookmark}
-                  openUserProfile={openUserProfile}
-                  user={user}
-                />
-              ))
-            )}
-          </div>
+          <ReelsPage
+            reelsFeed={reelsFeed}
+            setCreateMode={setCreateMode}
+            setShowCreatePost={setShowCreatePost}
+            activeReelId={activeReelId}
+            setActiveReelId={setActiveReelId}
+            isReelsMuted={isReelsMuted}
+            setIsReelsMuted={setIsReelsMuted}
+            handleReelTimeUpdate={handleReelTimeUpdate}
+            toggleFollow={toggleFollow}
+            followedUsers={followedUsers}
+            handleLike={handleLike}
+            handleShare={handleShare}
+            handleToggleComments={handleToggleComments}
+            handleBookmark={handleBookmark}
+            openUserProfile={openUserProfile}
+            user={user}
+          />
         )}
-
         {/* ==================== VIEW MODE 4: CREATOR PROFILE PAGE ==================== */}
         {viewMode === 'profile' && (() => {
           const isOwner = !viewingProfileUser || viewingProfileUser.id === user?.id;
@@ -1764,23 +1212,27 @@ export default function MainDashboardClient() {
                 </div>
               ) : (
                 <div className="grid grid-cols-3 gap-1.5 pt-1">
-                  {displayFilteredPosts.map((p) => (
-                    <div key={p.id} className="aspect-square bg-zinc-900 relative rounded-xl overflow-hidden group cursor-pointer border border-zinc-800/50 shadow-sm">
-                      {p.type === 'video' || p.type === 'reel' ? (
-                        <VideoPlayer src={p.image} className="w-full h-full" autoPlay loop muted controls={false} />
-                      ) : p.image ? (
-                        <Image width={500} height={500} referrerPolicy="no-referrer" src={p.image} alt="Post item" className="w-full h-full object-cover" loading="lazy" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center p-3 text-xs text-zinc-300 text-center bg-zinc-900 font-medium">
-                          {p.caption?.substring(0, 35) || 'Text post'}
-                        </div>
-                      )}
-                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3 text-white text-xs font-bold backdrop-blur-[2px]">
+                  {displayFilteredPosts.map((p) => {
+                    const mediaList = typeof p.media_url === "string" ? (() => { try { const parsed = JSON.parse(p.media_url); return Array.isArray(parsed) ? parsed : [parsed]; } catch { return [p.media_url]; } })() : p.media_url || [];
+                    const mediaSrc = mediaList[0] || p.image;
+                    return (
+                      <div key={p.id} className="aspect-square bg-zinc-900 relative rounded-xl overflow-hidden group cursor-pointer border border-zinc-800/50 shadow-sm">
+                        {p.type === 'video' || p.type === 'reel' ? (
+                          <VideoPlayer src={mediaSrc} className="w-full h-full" autoPlay muted={false} controls playsInline />
+                        ) : mediaSrc ? (
+                          <Image width={500} height={500} referrerPolicy="no-referrer" src={mediaSrc} alt="Post item" className="w-full h-full object-cover" loading="lazy" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center p-3 text-xs text-zinc-300 text-center bg-zinc-900 font-medium">
+                            {p.caption?.substring(0, 35) || 'Text post'}
+                          </div>
+                        )}
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3 text-white text-xs font-bold backdrop-blur-[2px]">
                         <span className="flex items-center gap-1"><Heart className="w-3.5 h-3.5 fill-white" /> {p.likes || 0}</span>
                         <span className="flex items-center gap-1"><MessageCircle className="w-3.5 h-3.5 fill-white" /> {p.commentsCount || 0}</span>
                       </div>
                     </div>
-                  ))}
+                  );
+                  })}
                 </div>
               )}
 
@@ -2385,8 +1837,33 @@ export default function MainDashboardClient() {
           onClose={() => setShowCreatePost(false)}
           user={user}
           initialMode={createMode}
-          onPostCreated={() => {
-            if (user) fetchPosts(user.id);
+          onPostCreated={(newPost) => {
+            if (newPost) {
+              const formattedNewPost = {
+                id: newPost.id,
+                author: newPost.profiles?.username || newPost.profiles?.full_name || 'Creator',
+                handle: `@${newPost.profiles?.username || 'user'}`,
+                avatar: newPost.profiles?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp',
+                image: (typeof newPost.media_url === 'string' && newPost.media_url.startsWith('[')) ? JSON.parse(newPost.media_url)[0] : newPost.media_url,
+                video_url: newPost.video_url,
+                media_url: newPost.media_url,
+                image_url: newPost.image_url,
+                type: newPost.type,
+                likes: 0,
+                comments: [],
+                commentsCount: 0,
+                caption: newPost.content,
+                views: 0,
+                isLiked: false,
+                isBookmarked: false,
+                showComments: false,
+                newComment: '',
+                user_id: newPost.user_id,
+                created_at: newPost.created_at
+              };
+              setPosts(prev => [formattedNewPost, ...prev]);
+            }
+            
           }}
         />
       )}
