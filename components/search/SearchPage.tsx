@@ -1,3 +1,4 @@
+"use client";
 import React from 'react';
 import Image from 'next/image';
 import { Search, Loader2, Clock, X, Flame, ArrowUpRight } from 'lucide-react';

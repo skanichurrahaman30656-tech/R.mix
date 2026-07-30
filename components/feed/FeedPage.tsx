@@ -1,3 +1,4 @@
+"use client";
 import React from 'react';
 import Image from 'next/image';
 import { Heart, MessageCircle, Share2, Bookmark, Loader2 } from 'lucide-react';

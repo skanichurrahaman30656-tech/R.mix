@@ -1,3 +1,4 @@
+"use client";
 import React from 'react';
 import { Film } from 'lucide-react';
 import { ReelCardItem } from './ReelCardItem';

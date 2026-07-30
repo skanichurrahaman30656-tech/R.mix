@@ -1,4 +1,3 @@
-
 import type { Metadata } from "next";
 import { Inter, Playfair_Display } from "next/font/google";
 import "./globals.css";
@@ -11,10 +10,13 @@ export const metadata: Metadata = {
   description: "Premium Social Experience",
 };
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} ${playfair.variable} font-sans antialiased bg-zinc-950 text-zinc-50`}>{children}</body>
+      <body className={`${inter.variable} ${playfair.variable} font-sans antialiased bg-zinc-950 text-zinc-50`}>
+        {children}
+      </body>
     </html>
   );
 }

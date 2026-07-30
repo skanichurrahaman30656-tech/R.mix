@@ -1,3 +1,4 @@
+"use client";
 import React, { useState, useEffect } from 'react';
 import { X, Copy, Share, Send, Check } from 'lucide-react';
 import Image from 'next/image';

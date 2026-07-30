@@ -1,3 +1,4 @@
+"use client";
 import React, { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { X, ChevronLeft, ChevronRight, Play, Pause, Send } from 'lucide-react';
