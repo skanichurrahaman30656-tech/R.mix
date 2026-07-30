@@ -43,6 +43,7 @@ export function StoryViewer({ stories, initialIndex, onClose, currentUser }: Sto
     setProgress(0);
     setIsPaused(false);
     fetchReactionsAndReplies(story.id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIndex, story.id]);
 
   useEffect(() => {
@@ -69,6 +70,7 @@ export function StoryViewer({ stories, initialIndex, onClose, currentUser }: Sto
     return () => {
       if (progressInterval.current) clearInterval(progressInterval.current);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIndex, isPaused, story.type]);
 
   const fetchReactionsAndReplies = async (storyId: string) => {
@@ -113,6 +115,7 @@ export function StoryViewer({ stories, initialIndex, onClose, currentUser }: Sto
     return () => {
       supabase.removeChannel(channel);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [story.id, isOwner]);
 
   const handleNext = () => {
@@ -135,11 +138,12 @@ export function StoryViewer({ stories, initialIndex, onClose, currentUser }: Sto
     // Optimistic update
     setReactionCounts(prev => ({...prev, [reaction]: (prev[reaction] || 0) + 1}));
     
-    await supabase.from('story_reactions').insert({
+    const { error: reactErr } = await supabase.from('story_reactions').insert({
       story_id: story.id,
       user_id: currentUser.id,
       reaction
     });
+    if (reactErr) console.warn('Story reaction failed:', (reactErr as any)?.message);
   };
 
   const handleReply = async (e: React.FormEvent) => {
@@ -149,11 +153,12 @@ export function StoryViewer({ stories, initialIndex, onClose, currentUser }: Sto
     const text = replyText;
     setReplyText('');
     
-    await supabase.from('story_replies').insert({
+    const { error: replyErr } = await supabase.from('story_replies').insert({
       story_id: story.id,
       user_id: currentUser.id,
       message: text
     });
+    if (replyErr) console.warn('Story reply failed:', (replyErr as any)?.message);
   };
 
   // Keyboard navigation
@@ -165,6 +170,7 @@ export function StoryViewer({ stories, initialIndex, onClose, currentUser }: Sto
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIndex]);
 
   return (

@@ -1,0 +1,1 @@
+console.log("Database migrations rely on cloud PostgreSQL URI which is restricted/not provided here, but the code in `SettingsSystem.tsx` handles errors gracefully and stores preferences securely inside standard `localStorage` as a fallback.");

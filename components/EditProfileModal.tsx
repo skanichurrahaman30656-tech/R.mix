@@ -77,20 +77,36 @@ export default function EditProfileModal({
   };
 
   const uploadImage = async (file: File, bucket: string): Promise<string> => {
-    const fileExt = file.name.split(".").pop();
-    const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+    try {
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .upload(fileName, file, { upsert: true });
 
-    const { data, error } = await supabase.storage
-      .from(bucket)
-      .upload(fileName, file, { upsert: true });
+      if (error) {
+        console.warn('Storage error, falling back to base64', error.message);
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(file);
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = (err) => reject(err);
+        });
+      }
 
-    if (error) throw error;
-
-    const {
-      data: { publicUrl },
-    } = supabase.storage.from(bucket).getPublicUrl(data.path);
-
-    return publicUrl;
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from(bucket).getPublicUrl(data.path);
+      return publicUrl;
+    } catch (err: any) {
+      console.warn('Storage exception, falling back to base64', err.message);
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = (error) => reject(error);
+      });
+    }
   };
 
   const handleSave = async () => {

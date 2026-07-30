@@ -1,9 +1,6 @@
-import { createClient } from '@supabase/supabase-js';
-const supabase = createClient('https://grkqbppgimklpyhrvqob.supabase.co', 'sb_publishable_gq-z20iCbR83jVFbOiwWzw_k-U8yx9O');
-async function test() {
-  let l = await supabase.from('likes').select('*').limit(1);
-  console.log('likes:', Object.keys(l.data[0] || {}));
-  let c = await supabase.from('comments').select('*').limit(1);
-  console.log('comments:', Object.keys(c.data[0] || {}));
-}
-test();
+const { createClient } = require('@supabase/supabase-js');
+require('dotenv').config({ path: '.env' });
+
+// We need the postgres connection string to run DDL, which might not be available. 
+// If not, maybe we can just add columns to `profiles`? 
+// No, we can't alter tables from the frontend client.

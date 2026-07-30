@@ -23,7 +23,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Access Denied' }, { status: 403 });
     }
 
-    if (user.email !== 'skanichurrahaman30656@gmail.com') {
+    const adminEmail = process.env.ADMIN_EMAIL;
+    if (!adminEmail || user.email !== adminEmail) {
       return NextResponse.json({ error: 'Access Denied' }, { status: 403 });
     }
 

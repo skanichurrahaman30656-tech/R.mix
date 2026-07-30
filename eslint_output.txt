@@ -1,0 +1,18 @@
+
+/app/applet/components/MainDashboardClient.tsx
+  305:6  warning  React Hook useEffect has a missing dependency: 'fetchPosts'. Either include it or remove the dependency array                   react-hooks/exhaustive-deps
+  636:6  warning  React Hook useEffect has missing dependencies: 'fetchPosts' and 'user?.id'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  666:6  warning  React Hook useEffect has a missing dependency: 'fetchPosts'. Either include it or remove the dependency array                   react-hooks/exhaustive-deps
+  705:6  warning  React Hook useEffect has a missing dependency: 'saveRecentSearch'. Either include it or remove the dependency array             react-hooks/exhaustive-deps
+
+/app/applet/components/SettingsSystem.tsx
+  60:6  warning  React Hook useEffect has a missing dependency: 'fetchSettings'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/app/applet/components/StoryViewer.tsx
+   46:6  warning  React Hook useEffect has a missing dependency: 'fetchReactionsAndReplies'. Either include it or remove the dependency array                                                                                                                                      react-hooks/exhaustive-deps
+   72:6  warning  React Hook useEffect has a missing dependency: 'handleNext'. Either include it or remove the dependency array                                                                                                                                                    react-hooks/exhaustive-deps
+  116:6  warning  React Hook useEffect has a missing dependency: 'fetchReactionsAndReplies'. Either include it or remove the dependency array                                                                                                                                      react-hooks/exhaustive-deps
+  170:6  warning  React Hook useEffect has missing dependencies: 'handleNext', 'handlePrev', and 'onClose'. Either include them or remove the dependency array. If 'onClose' changes too often, find the parent component that defines it and wrap that definition in useCallback  react-hooks/exhaustive-deps
+
+✖ 9 problems (0 errors, 9 warnings)
+

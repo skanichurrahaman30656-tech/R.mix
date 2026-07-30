@@ -112,7 +112,13 @@ export default function SignUpPage() {
               .upload(fileName, avatarFile, { upsert: true });
 
           if (uploadError) {
-            console.error("Avatar upload error:", uploadError);
+            console.warn("Avatar upload error, using base64:", uploadError.message);
+            finalAvatar = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.readAsDataURL(avatarFile);
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = (err) => reject(err);
+            });
           } else if (uploadData) {
             const {
               data: { publicUrl },

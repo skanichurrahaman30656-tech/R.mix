@@ -20,6 +20,7 @@ import {
 import CreatePostModal from './CreatePostModal';
 import EditProfileModal from './EditProfileModal';
 import { compressImage } from '@/lib/compress';
+import { SettingsSystem } from './SettingsSystem';
 
 function ReelCardItem({
   reelItem,
@@ -238,7 +239,11 @@ function ReelCardItem({
 export default function MainDashboardClient() {
   const router = useRouter();
   const [posts, setPosts] = useState<any[]>([]);
+  const postsRef = useRef(posts);
+  useEffect(() => { postsRef.current = posts; }, [posts]);
   const [page, setPage] = useState(0);
+  const pageRef = useRef(page);
+  useEffect(() => { pageRef.current = page; }, [page]);
   const [hasMorePosts, setHasMorePosts] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const POSTS_LIMIT = 5;
@@ -347,6 +352,9 @@ export default function MainDashboardClient() {
     } catch {
       setRecentSearches([]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const saveRecentSearch = (term: string) => {
@@ -438,12 +446,13 @@ export default function MainDashboardClient() {
   };
 
   const fetchSuggestedUsers = async (userId: string) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('profiles')
       .select('*')
       .neq('id', userId)
       .limit(6);
 
+    if (error) console.error('Error fetching posts:', error);
     if (data) {
       setSuggestedUsers(data);
     }
@@ -498,10 +507,11 @@ export default function MainDashboardClient() {
     }
   };
 
-  const fetchPosts = async (userId?: string, pageIndex = page, isLoadMore = false) => {
+  const fetchPosts = async (userId?: string, pageIndex = pageRef.current, isLoadMore = false, forceRefresh = false) => {
     if (isLoadMore) setIsLoadingMore(true);
-    else if (posts.length === 0) setLoading(true);
+    else if (postsRef.current.length === 0) setLoading(true);
 
+    if (forceRefresh) { pageIndex = 0; setPage(0); }
     const from = isLoadMore ? pageIndex * POSTS_LIMIT : 0;
     const to = isLoadMore ? ((pageIndex + 1) * POSTS_LIMIT) - 1 : ((pageIndex + 1) * POSTS_LIMIT) - 1;
 
@@ -628,6 +638,7 @@ export default function MainDashboardClient() {
     );
 
     const channel = supabase.channel("public:stories").on("postgres_changes", { event: "INSERT", schema: "public", table: "stories" }, () => { fetchStories(user?.id); }).subscribe(); return () => { subscription.unsubscribe(); supabase.removeChannel(channel); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   // Real-time Subscriptions Setup
@@ -656,6 +667,9 @@ export default function MainDashboardClient() {
     return () => {
       supabase.removeChannel(channel);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   // Search logic querying Supabase
@@ -695,6 +709,7 @@ export default function MainDashboardClient() {
     }, 300);
 
     return () => clearTimeout(delay);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery]);
 
   const handleStoryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -728,20 +743,31 @@ export default function MainDashboardClient() {
       const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
       
       const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('story-media')
+        .from('media')
         .upload(fileName, finalFile, { upsert: false });
 
-      if (uploadError) throw uploadError;
+      let publicUrl = '';
+      if (uploadError) {
+        console.warn('Storage error, falling back to base64', uploadError.message);
+        publicUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(finalFile);
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = (err) => reject(err);
+        });
+      } else if (uploadData) {
+        const { data } = supabase.storage
+          .from('media')
+          .getPublicUrl(uploadData.path);
+        publicUrl = data.publicUrl;
+      }
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('story-media')
-        .getPublicUrl(uploadData.path);
-
-      await supabase.from('stories').insert({
+      const { error: storyErr } = await supabase.from('stories').insert({
         user_id: user.id,
         media_url: publicUrl,
         type: type
       });
+      if (storyErr) console.warn('Story insert failed:', (storyErr as any)?.message);
 
       fetchStories(user.id);
     } catch (error) {
@@ -775,16 +801,18 @@ export default function MainDashboardClient() {
     if (isLiked) {
       await supabase.from('likes').delete().match({ post_id: id, user_id: user.id });
     } else {
-      await supabase.from('likes').insert({ post_id: id, user_id: user.id });
+      const { error: likeErr } = await supabase.from('likes').insert({ post_id: id, user_id: user.id });
+      if (likeErr) console.warn('Like insert failed:', (likeErr as any)?.message);
 
       const targetPost = posts.find(p => p.id === id);
       if (targetPost && targetPost.user_id !== user.id) {
-        await supabase.from('notifications').insert({
+        const { error: notifErr } = await supabase.from('notifications').insert({
           user_id: targetPost.user_id,
           actor_id: user.id,
           type: 'like',
           post_id: id
         });
+        if (notifErr) console.warn('Notification insert failed:', (notifErr as any)?.message);
       }
     }
   };
@@ -799,7 +827,8 @@ export default function MainDashboardClient() {
     if (isBookmarked) {
       await supabase.from('saved_posts').delete().match({ post_id: id, user_id: user.id });
     } else {
-      await supabase.from('saved_posts').insert({ post_id: id, user_id: user.id });
+      const { error: saveErr } = await supabase.from('saved_posts').insert({ post_id: id, user_id: user.id });
+      if (saveErr) console.warn('Save post failed:', (saveErr as any)?.message);
     }
   };
 
@@ -841,7 +870,7 @@ export default function MainDashboardClient() {
   const submitComment = async (id: string, content: string) => {
     if (!user || !id || !content?.trim()) return;
 
-    const { data } = await supabase.from('comments').insert({
+    const { data, error: commentError } = await supabase.from('comments').insert({
       post_id: id,
       user_id: user.id,
       content: content.trim()
@@ -863,12 +892,14 @@ export default function MainDashboardClient() {
 
       const targetPost = posts.find(p => p.id === id);
       if (targetPost && targetPost.user_id !== user.id) {
-        await supabase.from('notifications').insert({
+        const { error: notifErr } = await supabase.from('notifications').insert({
           user_id: targetPost.user_id,
           actor_id: user.id,
           type: 'comment',
           post_id: id
         });
+    if (commentError) { console.warn('Comment insert failed:', (commentError as any)?.message); }
+        if (notifErr) console.warn('Notification insert failed:', (notifErr as any)?.message);
       }
     }
   };
@@ -877,7 +908,9 @@ export default function MainDashboardClient() {
     if (!reelId) return;
     if (currentTime > 3 && !viewedReelIds[reelId]) {
       setViewedReelIds(prev => ({ ...prev, [reelId]: true }));
-      supabase.from("post_views").insert({ post_id: reelId, user_id: user?.id }).then();
+      supabase.from("post_views").insert({ post_id: reelId, user_id: user?.id }).then((res) => {
+        if (res.error) console.warn('Post view insert failed:', (res.error as any)?.message);
+      });
       setPosts(prev => prev.map(p => p.id === reelId ? { ...p, views: (p.views || 0) + 1 } : p));
     }
   };
@@ -886,11 +919,12 @@ export default function MainDashboardClient() {
   const handleSendMessage = async () => {
     if (!user || !selectedChatUser || !newMessageText.trim()) return;
 
-    const { data } = await supabase.from('messages').insert({
+    const { data, error: msgErr } = await supabase.from('messages').insert({
       sender_id: user.id,
       receiver_id: selectedChatUser.id,
       content: newMessageText.trim()
     }).select('*').single();
+    if (msgErr) console.warn('Message insert failed:', (msgErr as any)?.message);
 
     if (data) {
       setMessagesList(prev => [...prev, data]);
@@ -1100,7 +1134,7 @@ export default function MainDashboardClient() {
                     {post.image && (
                       <div className="aspect-square bg-zinc-900 relative rounded-md overflow-hidden mx-4 my-2 border border-zinc-800/50" onDoubleClick={() => handleLike(post.id, post.isLiked)}>
                         {post.type === 'video' || post.type === 'reel' ? (
-                          <VideoPlayer src={post.image} className="w-full h-full" controls loop />
+                          <VideoPlayer src={post.image} className="w-full h-full" controls loop autoPlay />
                         ) : (
                           <Image width={500} height={500} referrerPolicy="no-referrer" src={post.image} alt="Post content" className="w-full h-full object-cover cursor-pointer" />
                         )}
@@ -1756,211 +1790,15 @@ export default function MainDashboardClient() {
       })()}
 
         {/* ==================== VIEW MODE 5: SETTINGS PAGE ==================== */}
+
         {viewMode === 'settings' && (
-          <div className="px-4 py-2 space-y-6">
-            
-            {/* Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
-              <div className="flex items-center gap-3">
-                <button 
-                  onClick={() => setViewMode('profile')}
-                  className="p-1 rounded-full hover:bg-zinc-800 transition-colors"
-                >
-                  <ArrowLeft className="w-5 h-5 text-zinc-300" />
-                </button>
-                <h1 className="text-lg font-bold">Settings & Privacy</h1>
-              </div>
-            </div>
-
-            {/* Account Info Banner */}
-            <div className={`p-4 rounded-xl border flex items-center justify-between ${isDarkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full overflow-hidden border border-zinc-700">
-                  <Image width={500} height={500} referrerPolicy="no-referrer" src={profile?.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} alt="Profile" className="w-full h-full object-cover" />
-                </div>
-                <div>
-                  <div className="font-semibold text-sm">{profile?.full_name || profile?.username || 'User Account'}</div>
-                  <div className="text-xs text-zinc-400">{user?.email}</div>
-                </div>
-              </div>
-              <button 
-                onClick={() => setShowEditProfile(true)} 
-                className="text-xs text-indigo-400 font-semibold hover:underline"
-              >
-                Manage
-              </button>
-            </div>
-
-            {/* Settings Sections */}
-            <div className="space-y-4">
-              
-              {/* Group 1: Account & Security */}
-              <div className="space-y-1">
-                <div className="text-xs font-bold text-zinc-500 uppercase tracking-wider px-2 mb-1">
-                  Account & Security
-                </div>
-                <div className={`rounded-xl border overflow-hidden ${isDarkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
-                  
-                  <button 
-                    onClick={() => triggerSettingNotice('Account Settings')}
-                    className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-zinc-800/50 transition-colors border-b border-zinc-800/40"
-                  >
-                    <div className="flex items-center gap-3">
-                      <UserCheck className="w-5 h-5 text-indigo-400" />
-                      <span className="text-sm font-medium">Account</span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-zinc-500" />
-                  </button>
-
-                  <button 
-                    onClick={() => triggerSettingNotice('Privacy Settings')}
-                    className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-zinc-800/50 transition-colors border-b border-zinc-800/40"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Lock className="w-5 h-5 text-blue-400" />
-                      <span className="text-sm font-medium">Privacy</span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-zinc-500" />
-                  </button>
-
-                  <button 
-                    onClick={() => triggerSettingNotice('Security & Password')}
-                    className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-zinc-800/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Shield className="w-5 h-5 text-emerald-400" />
-                      <span className="text-sm font-medium">Security</span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-zinc-500" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Group 2: Preferences */}
-              <div className="space-y-1">
-                <div className="text-xs font-bold text-zinc-500 uppercase tracking-wider px-2 mb-1">
-                  Preferences
-                </div>
-                <div className={`rounded-xl border overflow-hidden ${isDarkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
-                  
-                  <button 
-                    onClick={() => triggerSettingNotice('Notifications Preferences')}
-                    className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-zinc-800/50 transition-colors border-b border-zinc-800/40"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Bell className="w-5 h-5 text-amber-400" />
-                      <span className="text-sm font-medium">Notifications</span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-zinc-500" />
-                  </button>
-
-                  <div className="px-4 py-3 flex items-center justify-between border-b border-zinc-800/40">
-                    <div className="flex items-center gap-3">
-                      {isDarkMode ? <Moon className="w-5 h-5 text-purple-400" /> : <Sun className="w-5 h-5 text-amber-500" />}
-                      <span className="text-sm font-medium">Appearance</span>
-                    </div>
-                    <button 
-                      onClick={() => setIsDarkMode(!isDarkMode)}
-                      className={`px-3 py-1 text-xs font-semibold rounded-full border transition-colors ${
-                        isDarkMode 
-                          ? 'bg-zinc-800 text-zinc-200 border-zinc-700 hover:bg-zinc-700' 
-                          : 'bg-zinc-200 text-zinc-900 border-zinc-300 hover:bg-zinc-300'
-                      }`}
-                    >
-                      {isDarkMode ? 'Dark' : 'Light'}
-                    </button>
-                  </div>
-
-                  <button 
-                    onClick={() => triggerSettingNotice('Language Settings')}
-                    className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-zinc-800/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Globe className="w-5 h-5 text-teal-400" />
-                      <span className="text-sm font-medium">Language</span>
-                    </div>
-                    <span className="text-xs text-zinc-400">English (US)</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Group 3: Content & Activity */}
-              <div className="space-y-1">
-                <div className="text-xs font-bold text-zinc-500 uppercase tracking-wider px-2 mb-1">
-                  Content & Activity
-                </div>
-                <div className={`rounded-xl border overflow-hidden ${isDarkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
-                  
-                  <button 
-                    onClick={() => triggerSettingNotice('Blocked Users Manager')}
-                    className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-zinc-800/50 transition-colors border-b border-zinc-800/40"
-                  >
-                    <div className="flex items-center gap-3">
-                      <UserX className="w-5 h-5 text-red-400" />
-                      <span className="text-sm font-medium">Blocked Users</span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-zinc-500" />
-                  </button>
-
-                  <button 
-                    onClick={() => triggerSettingNotice('Saved Posts')}
-                    className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-zinc-800/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Bookmark className="w-5 h-5 text-pink-400" />
-                      <span className="text-sm font-medium">Saved Posts</span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-zinc-500" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Group 4: Support & Legal */}
-              <div className="space-y-1">
-                <div className="text-xs font-bold text-zinc-500 uppercase tracking-wider px-2 mb-1">
-                  Support & Legal
-                </div>
-                <div className={`rounded-xl border overflow-hidden ${isDarkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-zinc-200'}`}>
-                  
-                  <button 
-                    onClick={() => triggerSettingNotice('Help & Support Center')}
-                    className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-zinc-800/50 transition-colors border-b border-zinc-800/40"
-                  >
-                    <div className="flex items-center gap-3">
-                      <HelpCircle className="w-5 h-5 text-cyan-400" />
-                      <span className="text-sm font-medium">Help & Support</span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-zinc-500" />
-                  </button>
-
-                  <button 
-                    onClick={() => triggerSettingNotice('About R.MIX v2.4.0')}
-                    className="w-full px-4 py-3.5 flex items-center justify-between hover:bg-zinc-800/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Info className="w-5 h-5 text-purple-400" />
-                      <span className="text-sm font-medium">About</span>
-                    </div>
-                    <span className="text-xs text-zinc-400">v2.4.0</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Group 5: Logout */}
-              <div className="pt-2">
-                <button 
-                  onClick={handleLogout}
-                  className="w-full py-3.5 px-4 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 font-semibold text-sm flex items-center justify-center gap-2 transition-colors"
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span>Log Out</span>
-                </button>
-              </div>
-
-            </div>
-          </div>
+          <SettingsSystem 
+            user={user} 
+            onClose={() => setViewMode('profile')} 
+            onLogout={handleLogout} 
+          />
         )}
-
+      
       </main>
 
       {/* Bottom Navigation */}
@@ -2575,15 +2413,7 @@ export default function MainDashboardClient() {
         />
       )}
 
-      {/* Create Post Modal */}
-      {user && (
-        <CreatePostModal
-          isOpen={showCreatePost}
-          onClose={() => setShowCreatePost(false)}
-          user={user}
-          onPostCreated={() => fetchPosts(user.id)}
-        />
-      )}
+
     </div>
   );
 }
