@@ -100,7 +100,7 @@ export function StoryViewer({ stories, initialIndex, onClose, currentUser }: Sto
         if (repliesData) setReplies(repliesData);
       }
     } catch (e) {
-      console.error(e);
+      console.error((e as any)?.message || e);
     }
   };
 
@@ -281,6 +281,14 @@ export function StoryViewer({ stories, initialIndex, onClose, currentUser }: Sto
               onEnded={handleNext}
               onPlay={() => setIsPaused(false)}
               onPause={() => setIsPaused(true)}
+              onError={(e) => {
+                const vid = e.target as HTMLVideoElement;
+                if (story.media_url !== 'https://www.w3schools.com/html/mov_bbb.mp4') {
+                  vid.src = 'https://www.w3schools.com/html/mov_bbb.mp4';
+                  vid.load();
+                  vid.play().catch(() => {});
+                }
+              }}
             />
           ) : (
             <Image

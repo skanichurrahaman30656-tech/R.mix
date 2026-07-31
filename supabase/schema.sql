@@ -57,6 +57,7 @@ create table if not exists public.posts (
 
 alter table public.posts enable row level security;
 drop policy if exists "Posts are viewable by everyone." on posts;
+drop policy if exists "Posts are viewable by everyone or followers or owner." on posts;
 create policy "Posts are viewable by everyone." on posts for select using (true);
 drop policy if exists "Users can insert their own posts." on posts;
 create policy "Users can insert their own posts." on posts for insert with check (auth.uid() = user_id);

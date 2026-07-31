@@ -320,18 +320,23 @@ export default function MainDashboardClient() {
     const from = isLoadMore ? pageIndex * POSTS_LIMIT : 0;
     const to = isLoadMore ? ((pageIndex + 1) * POSTS_LIMIT) - 1 : ((pageIndex + 1) * POSTS_LIMIT) - 1;
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('posts')
       .select(`
         *,
         profiles:user_id ( id, username, full_name, avatar_url ),
         likes ( user_id ),
         comments ( id, content, created_at, profiles:user_id ( id, username, avatar_url ) ),
-        saved_posts ( user_id ),
-        post_views ( user_id )
+        saved_posts ( user_id )
       `)
       .order('created_at', { ascending: false })
       .range(from, to);
+
+    if (error) {
+      console.error("Supabase Error:", error);
+    }
+
+    console.log("Fetched Posts:", data);
 
     if (data) {
       const formattedPosts = data.map((p: any) => {
@@ -582,7 +587,7 @@ export default function MainDashboardClient() {
 
       fetchStories(user.id);
     } catch (error) {
-      console.error("Story upload error:", error);
+      console.error("Story upload error:", (error as any)?.message || error);
       alert("Failed to upload story");
     } finally {
       setStoryUploading(false);

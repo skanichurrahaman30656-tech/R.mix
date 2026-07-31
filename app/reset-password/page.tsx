@@ -1,5 +1,16 @@
+import { Suspense } from 'react';
+import nextDynamic from 'next/dynamic';
+import { headers } from 'next/headers';
+
 export const dynamic = 'force-dynamic';
-import ResetPasswordClient from './ResetPasswordClient';
+
+const ResetPasswordClient = nextDynamic(() => import('./ResetPasswordClient'), { ssr: false });
+
 export default function ResetPasswordPage() {
-  return <ResetPasswordClient />;
+  headers();
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-400">Loading...</div>}>
+      <ResetPasswordClient />
+    </Suspense>
+  );
 }

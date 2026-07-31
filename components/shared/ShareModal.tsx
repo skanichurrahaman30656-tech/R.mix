@@ -24,7 +24,7 @@ export function ShareModal({ isOpen, onClose, postId }: ShareModalProps) {
 
   if (!isOpen) return null;
 
-  const url = `${window.location.origin}?post=${postId}`;
+  const url = typeof window !== 'undefined' ? `${window.location.origin}?post=${postId}` : '';
 
   const handleCopy = () => {
     navigator.clipboard.writeText(url);
