@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://r-mix.vercel.app/sitemap.xml
+
