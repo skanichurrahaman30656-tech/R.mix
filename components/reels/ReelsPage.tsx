@@ -19,7 +19,11 @@ export function ReelsPage({
   handleToggleComments,
   handleBookmark,
   openUserProfile,
-  user
+  user,
+  handleCommentChange,
+  submitComment,
+  handleDeletePost,
+  handleEditPost
 }: any) {
   return (
     <div className="h-[calc(100vh-3.5rem-4rem)] snap-y snap-mandatory overflow-y-auto no-scrollbar px-2">
@@ -58,6 +62,12 @@ export function ReelsPage({
             handleBookmark={handleBookmark}
             openUserProfile={openUserProfile}
             user={user}
+            handleCommentChange={handleCommentChange}
+            submitComment={submitComment}
+            handleDeletePost={handleDeletePost}
+            handleEditPost={handleEditPost}
+            setCreateMode={setCreateMode}
+            setShowCreatePost={setShowCreatePost}
           />
         ))
       )}

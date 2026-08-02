@@ -28,41 +28,94 @@ export function FeedPage({
 }: any) {
   return (
     <>
-      {/* Stories Bar */}
-      <div className={`flex gap-4 overflow-x-auto px-4 py-2 no-scrollbar border-b pb-4 mb-4 ${isDarkMode ? 'border-zinc-900' : 'border-zinc-200'}`}>
-        {/* Add Story Button */}
-        <div className="flex flex-col items-center gap-1 min-w-[72px] cursor-pointer" onClick={() => storyInputRef.current?.click()}>
-          <div className="relative rounded-full p-[2px]">
-            <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-zinc-950 relative">
-              {storyUploading ? (
-                <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                  <Loader2 className="w-6 h-6 text-zinc-900 animate-spin" />
-                </div>
-              ) : null}
-              <Image width={500} height={500} referrerPolicy="no-referrer" src={profile?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp'} alt="Your Story" className="w-full h-full object-cover" />
-            </div>
-            <div className="absolute bottom-0 right-0 bg-indigo-600 rounded-full w-5 h-5 flex items-center justify-center border-2 border-zinc-950">
-              <span className="text-white text-xs leading-none font-bold">+</span>
-            </div>
+      {/* Facebook-style Create Post Card */}
+      <div className={`mx-4 mb-4 p-3.5 rounded-2xl border shadow-sm ${isDarkMode ? 'bg-zinc-900/90 border-zinc-800' : 'bg-white border-zinc-200'}`}>
+        <div className="flex items-center gap-3 pb-3 border-b border-zinc-800/60">
+          <div className="w-10 h-10 rounded-full overflow-hidden border border-zinc-700 flex-shrink-0">
+            <Image width={100} height={100} referrerPolicy="no-referrer" src={profile?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp'} alt="Profile" className="w-full h-full object-cover" />
           </div>
-          <span className="text-xs font-medium text-zinc-500">Your Story</span>
+          <div 
+            onClick={() => {
+              const btn = document.querySelector('[title="Create Post"]') || document.getElementById('create-post-trigger');
+              if (btn) (btn as HTMLElement).click();
+            }}
+            className={`flex-1 px-4 py-2.5 rounded-full text-sm cursor-pointer transition-colors ${isDarkMode ? 'bg-zinc-800/80 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700'}`}
+          >
+            What&apos;s on your mind?
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 pt-2.5">
+          <button 
+            onClick={() => {
+              const btn = document.getElementById('create-photo-trigger') || document.querySelector('[title="Create Post"]');
+              if (btn) (btn as HTMLElement).click();
+            }}
+            className="flex items-center justify-center gap-2 py-2 rounded-xl hover:bg-zinc-800/40 text-xs font-semibold text-emerald-400 transition-colors"
+          >
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span>Photo</span>
+          </button>
+          <button 
+            onClick={() => {
+              const btn = document.getElementById('create-video-trigger') || document.querySelector('[title="Create Post"]');
+              if (btn) (btn as HTMLElement).click();
+            }}
+            className="flex items-center justify-center gap-2 py-2 rounded-xl hover:bg-zinc-800/40 text-xs font-semibold text-indigo-400 transition-colors"
+          >
+            <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse" />
+            <span>Video</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Stories + Reels Tabs & Horizontal Scroll Section */}
+      <div className={`mx-4 mb-4 p-3 rounded-2xl border ${isDarkMode ? 'bg-zinc-900/90 border-zinc-800' : 'bg-white border-zinc-200'}`}>
+        <div className="flex items-center gap-6 border-b border-zinc-800/50 pb-2.5 mb-3 px-2">
+          <button className="relative pb-1 text-xs font-bold text-indigo-400 flex items-center gap-1.5">
+            <span>Stories</span>
+            <div className="absolute -bottom-2.5 left-0 right-0 h-0.5 bg-indigo-500 rounded-full" />
+          </button>
+          <button className="relative pb-1 text-xs font-semibold text-zinc-400 hover:text-zinc-200 flex items-center gap-1.5">
+            <span>Reels</span>
+          </button>
         </div>
 
-        {/* Story List */}
-        {stories.map((story: any) => (
-          <div
-            key={story.id}
-            onClick={() => handleStoryClick(story.id)}
-            className="flex flex-col items-center gap-1 min-w-[72px] cursor-pointer"
+        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+          {/* First card = Create Story */}
+          <div 
+            onClick={() => storyInputRef.current?.click()}
+            className={`flex-shrink-0 w-24 h-36 rounded-2xl border overflow-hidden relative cursor-pointer flex flex-col justify-end p-2 group transition-transform hover:scale-[1.02] ${isDarkMode ? 'bg-zinc-800 border-zinc-700' : 'bg-zinc-100 border-zinc-200'}`}
           >
-            <div className="relative rounded-full p-[2px] bg-gradient-to-tr from-yellow-400 to-fuchsia-600">
-              <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-zinc-950">
-                <Image width={500} height={500} referrerPolicy="no-referrer" src={story.avatar} alt={story.author} className="w-full h-full object-cover" />
-              </div>
+            <div className="absolute inset-0">
+              <Image width={200} height={300} referrerPolicy="no-referrer" src={profile?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp'} alt="Create Story" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
             </div>
-            <span className="text-xs font-medium truncate w-16 text-center">{story.author}</span>
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-indigo-600 border-2 border-white flex items-center justify-center shadow-lg">
+              <span className="text-white text-base font-bold">+</span>
+            </div>
+            <span className="relative z-10 text-[11px] font-bold text-white text-center truncate">Create Story</span>
           </div>
-        ))}
+
+          {/* Story Cards with rounded corners & blue ring around active stories */}
+          {stories.map((story: any) => (
+            <div
+              key={story.id}
+              onClick={() => handleStoryClick(story.id)}
+              className="flex-shrink-0 w-24 h-36 rounded-2xl border border-indigo-500/80 ring-2 ring-indigo-500/50 overflow-hidden relative cursor-pointer flex flex-col justify-between p-2 shadow-lg group transition-transform hover:scale-[1.02]"
+            >
+              <div className="absolute inset-0 z-0">
+                <Image width={200} height={300} referrerPolicy="no-referrer" src={story.avatar || 'https://picsum.photos/seed/story/200/300'} alt={story.author} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30" />
+              </div>
+              <div className="relative z-10 w-7 h-7 rounded-full overflow-hidden border-2 border-indigo-500 flex-shrink-0">
+                <Image width={50} height={50} referrerPolicy="no-referrer" src={story.avatar} alt="Author" className="w-full h-full object-cover" />
+              </div>
+              <span className="relative z-10 text-[11px] font-bold text-white truncate drop-shadow">
+                {story.author}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="max-w-xl mx-auto w-full">

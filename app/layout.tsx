@@ -14,6 +14,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
+      <head>
+        <meta name="google-site-verification" content="1NCwlfSEj1DHfA91luhxp-yMnxRXb07l9K4JWPGGu-c" />
+      </head>
       <body className={`${inter.variable} ${playfair.variable} font-sans antialiased bg-zinc-950 text-zinc-50`}>
         {children}
       </body>

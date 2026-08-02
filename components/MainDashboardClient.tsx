@@ -984,40 +984,65 @@ export default function MainDashboardClient() {
             </div>
           </div>
           
-          <div className="flex items-center gap-4">
-            {viewMode === 'profile' && (
-              <button 
-                onClick={() => setViewMode('settings')} 
-                className={`p-1.5 rounded-full hover:bg-zinc-800/50 transition-colors ${isDarkMode ? 'text-zinc-100' : 'text-zinc-800'}`}
-                title="Settings"
-              >
-                <Settings className="w-6 h-6" />
-              </button>
-            )}
+          <div className="flex items-center gap-3">
+            {/* Search Icon */}
+            <button 
+              onClick={() => setViewMode('search')}
+              className={`p-2 rounded-full hover:bg-zinc-800/50 transition-colors ${viewMode === 'search' ? 'text-indigo-400 bg-zinc-800/30' : (isDarkMode ? 'text-zinc-200' : 'text-zinc-800')}`}
+              title="Search"
+            >
+              <Search className="w-5 h-5" />
+            </button>
 
-            {viewMode === 'settings' && (
-              <button 
-                onClick={() => setViewMode('profile')} 
-                className="flex items-center gap-1 text-sm font-medium text-indigo-400 hover:text-indigo-300"
-              >
-                <ArrowLeft className="w-5 h-5" />
-                <span>Profile</span>
-              </button>
-            )}
+            {/* Messenger Icon */}
+            <button 
+              onClick={() => setShowMessagesModal(true)}
+              className={`p-2 rounded-full hover:bg-zinc-800/50 transition-colors relative ${isDarkMode ? 'text-zinc-200' : 'text-zinc-800'}`}
+              title="Messenger"
+            >
+              <MessageCircle className="w-5 h-5" />
+              {messagesList.some(m => !m.read) && (
+                <span className="absolute top-1 right-1 w-2 h-2 bg-indigo-500 rounded-full animate-pulse" />
+              )}
+            </button>
 
-            {(viewMode === 'feed' || viewMode === 'reels' || viewMode === 'search') && (
-              <>
-                <button onClick={() => setShowNotificationsModal(true)} className="hover:opacity-70 transition-opacity relative">
-                  <Heart className={`w-6 h-6 ${isDarkMode ? 'text-zinc-50' : 'text-zinc-900'}`} />
-                  {notificationsList.some(n => !n.read) && (
-                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-zinc-950 animate-pulse" />
-                  )}
-                </button>
-                <button onClick={() => setShowMessagesModal(true)} className="hover:opacity-70 transition-opacity">
-                  <MessageCircle className={`w-6 h-6 ${isDarkMode ? 'text-zinc-50' : 'text-zinc-900'}`} />
-                </button>
-              </>
-            )}
+            {/* Notification Icon */}
+            <button 
+              onClick={() => setShowNotificationsModal(true)}
+              className={`p-2 rounded-full hover:bg-zinc-800/50 transition-colors relative ${isDarkMode ? 'text-zinc-200' : 'text-zinc-800'}`}
+              title="Notifications"
+            >
+              <Bell className="w-5 h-5" />
+              {notificationsList.some(n => !n.read) && (
+                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+              )}
+            </button>
+
+            {/* Profile Avatar */}
+            <button 
+              onClick={() => {
+                if (user) {
+                  setViewMode('profile');
+                } else {
+                  router.push('/login');
+                }
+              }}
+              className={`w-8 h-8 rounded-full overflow-hidden border-2 transition-all ${
+                viewMode === 'profile' || viewMode === 'settings'
+                  ? 'border-indigo-500 ring-2 ring-indigo-500/50 scale-105'
+                  : 'border-zinc-700 opacity-80 hover:opacity-100'
+              }`}
+              title="Profile"
+            >
+              <Image 
+                width={100} 
+                height={100} 
+                referrerPolicy="no-referrer" 
+                src={profile?.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} 
+                alt="Profile Avatar" 
+                className="w-full h-full object-cover" 
+              />
+            </button>
           </div>
         </div>
       </nav>
