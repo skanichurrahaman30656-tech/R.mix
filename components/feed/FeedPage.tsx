@@ -29,7 +29,7 @@ export function FeedPage({
   return (
     <>
       {/* Stories Bar */}
-      <div className={`flex gap-4 overflow-x-auto px-4 py-2 scrollbar-hide border-b pb-4 mb-4 ${isDarkMode ? 'border-zinc-900' : 'border-zinc-200'}`}>
+      <div className={`flex gap-4 overflow-x-auto px-4 py-2 no-scrollbar border-b pb-4 mb-4 ${isDarkMode ? 'border-zinc-900' : 'border-zinc-200'}`}>
         {/* Add Story Button */}
         <div className="flex flex-col items-center gap-1 min-w-[72px] cursor-pointer" onClick={() => storyInputRef.current?.click()}>
           <div className="relative rounded-full p-[2px]">
@@ -65,7 +65,7 @@ export function FeedPage({
         ))}
       </div>
 
-      <div className="max-w-lg mx-auto w-full">
+      <div className="max-w-xl mx-auto w-full">
         {posts.length === 0 ? (
           <div className="text-center py-12 text-zinc-500">
             No posts found. Following people will show their posts here.

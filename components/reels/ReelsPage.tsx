@@ -22,7 +22,7 @@ export function ReelsPage({
   user
 }: any) {
   return (
-    <div className="h-[calc(100vh-3.5rem-4rem)] snap-y snap-mandatory overflow-y-auto scrollbar-hide px-2">
+    <div className="h-[calc(100vh-3.5rem-4rem)] snap-y snap-mandatory overflow-y-auto no-scrollbar px-2">
       {reelsFeed.length === 0 ? (
         <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">
           <div className="p-5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">

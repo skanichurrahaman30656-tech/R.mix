@@ -132,7 +132,9 @@ export const VideoPlayer = React.forwardRef<HTMLVideoElement, VideoPlayerProps>(
             poster={poster}
             className={`w-full h-full object-cover transition-all duration-700 ${loading ? 'opacity-0 scale-105 blur-md' : 'opacity-100 scale-100 blur-0'}`}
             controls={controls && !error}
-            controlsList="nodownload"
+            controlsList="nodownload noremoteplayback nofullscreen"
+            disablePictureInPicture
+            onContextMenu={(e) => e.preventDefault()}
             autoPlay={false}
             loop={loop}
             muted={muted}

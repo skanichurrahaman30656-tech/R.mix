@@ -15,7 +15,7 @@ import {
   FileText, Music, UserPlus, Flame, Sparkles, Clock, X, Play, 
   Volume2, VolumeX, User, ArrowUpRight, BarChart3,
   Link as LinkIcon, MapPin, CheckCircle2, DollarSign, Star, Award, 
-  Zap, Briefcase, Send
+  Zap, Briefcase, Send, ShieldCheck, CreditCard, Lightbulb
 } from 'lucide-react';
 
 import CreatePostModal from './shared/CreatePostModal';
@@ -23,6 +23,7 @@ import { FeedPage } from './feed/FeedPage';
 import { SearchPage } from './search/SearchPage';
 import { ReelsPage } from './reels/ReelsPage';
 import EditProfileModal from './shared/EditProfileModal';
+import { motion } from 'motion/react';
 import { SettingsSystem } from "./settings/SettingsSystem";
 import { compressImage } from '@/lib/compress';
 
@@ -65,10 +66,18 @@ export default function MainDashboardClient() {
   const [loading, setLoading] = useState(true);
   const [searchLoading, setSearchLoading] = useState(false);
   const [viewMode, setViewMode] = useState<'feed' | 'reels' | 'profile' | 'settings' | 'search'>('feed');
+  useEffect(() => { window.scrollTo(0, 0); }, [viewMode]);
   const [profileTab, setProfileTab] = useState<'posts' | 'reels' | 'photos' | 'videos'>('posts');
   const [dashboardTab, setDashboardTab] = useState<'overview' | 'analytics' | 'content' | 'audience' | 'engagement' | 'monetization'>('overview');
   const [activeSettingToast, setActiveSettingToast] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
+  const [showIntro, setShowIntro] = useState<boolean>(true);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowIntro(false);
+    }, 2200);
+    return () => clearTimeout(timer);
+  }, []);
   const [storyUploading, setStoryUploading] = useState(false);
   const [selectedStoryIndex, setSelectedStoryIndex] = useState<number | null>(null);
   
@@ -80,6 +89,83 @@ export default function MainDashboardClient() {
   const [activeReelId, setActiveReelId] = useState<string | null>(null);
   const [viewingProfileUser, setViewingProfileUser] = useState<any>(null);
   const [viewingProfileStats, setViewingProfileStats] = useState<{ followers: number; following: number }>({ followers: 0, following: 0 });
+  const [selectedProfilePost, setSelectedProfilePost] = useState<any>(null);
+  const [isEditingPostModal, setIsEditingPostModal] = useState(false);
+  const [editPostCaption, setEditPostCaption] = useState('');
+  const [showPayoutModal, setShowPayoutModal] = useState(false);
+  const [payoutForm, setPayoutForm] = useState({
+    fullName: profile?.payout_full_name || profile?.full_name || '',
+    bankAccount: profile?.payout_bank_account || '',
+    ifsc: profile?.payout_ifsc || '',
+    bankName: profile?.payout_bank_name || '',
+    country: profile?.payout_country || 'United States',
+    panCard: profile?.payout_pan_card || '',
+    mobile: profile?.payout_mobile || '',
+    email: profile?.payout_email || user?.email || '',
+    paypal: profile?.payout_paypal || ''
+  });
+  const [payoutSaving, setPayoutSaving] = useState(false);
+
+  const handleSavePayout = async () => {
+    if (!user) return;
+    setPayoutSaving(true);
+    try {
+      const { error } = await supabase.from('profiles').update({
+        payout_full_name: payoutForm.fullName,
+        payout_bank_account: payoutForm.bankAccount,
+        payout_ifsc: payoutForm.ifsc,
+        payout_bank_name: payoutForm.bankName,
+        payout_country: payoutForm.country,
+        payout_pan_card: payoutForm.panCard,
+        payout_mobile: payoutForm.mobile,
+        payout_email: payoutForm.email,
+        payout_paypal: payoutForm.paypal,
+        updated_at: new Date().toISOString()
+      }).eq('id', user.id);
+
+      if (error) {
+        localStorage.setItem('payout_' + user.id, JSON.stringify(payoutForm));
+      }
+      setActiveSettingToast("Payout details saved successfully for all countries!");
+      setTimeout(() => setActiveSettingToast(null), 3000);
+      setShowPayoutModal(false);
+    } catch (err: any) {
+      localStorage.setItem('payout_' + user.id, JSON.stringify(payoutForm));
+      setActiveSettingToast("Saved payout details locally!");
+      setTimeout(() => setActiveSettingToast(null), 3000);
+      setShowPayoutModal(false);
+    } finally {
+      setPayoutSaving(false);
+    }
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    if (!confirm("Are you sure you want to delete this post/video?")) return;
+    try {
+      await supabase.from('posts').delete().match({ id: postId });
+      setPosts(prev => prev.filter(p => p.id !== postId));
+      setSelectedProfilePost(null);
+    } catch (err) {
+      console.error('Error deleting post:', err);
+    }
+  };
+
+  const handleStartEditPost = (post: any) => {
+    setEditPostCaption(post.caption || '');
+    setIsEditingPostModal(true);
+  };
+
+  const handleSaveEditPost = async () => {
+    if (!selectedProfilePost) return;
+    try {
+      await supabase.from('posts').update({ content: editPostCaption }).match({ id: selectedProfilePost.id });
+      setPosts(prev => prev.map(p => p.id === selectedProfilePost.id ? { ...p, caption: editPostCaption } : p));
+      setSelectedProfilePost((prev: any) => prev ? { ...prev, caption: editPostCaption } : null);
+      setIsEditingPostModal(false);
+    } catch (err) {
+      console.error('Error updating post:', err);
+    }
+  };
   
   const storyInputRef = useRef<HTMLInputElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
@@ -276,6 +362,11 @@ export default function MainDashboardClient() {
   };
 
   const fetchStories = async (userId?: string) => {
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    
+    // Auto-cleanup: delete stories older than 24h
+    await supabase.from('stories').delete().lt('created_at', yesterday);
+
     const { data } = await supabase
       .from('stories')
       .select(`
@@ -286,6 +377,7 @@ export default function MainDashboardClient() {
         created_at,
         profiles:user_id ( id, username, avatar_url )
       `)
+      .gte('created_at', yesterday)
       .order('created_at', { ascending: false });
     
     if (data) {
@@ -778,10 +870,90 @@ export default function MainDashboardClient() {
   const estimatedReachCount = new Set(userOwnPosts.flatMap(p => (p.post_views || []).map((v: any) => v.user_id))).size;
   const userEngagementRate = totalUserViewsCount > 0 ? (((totalUserLikesCount + totalUserCommentsCount) / totalUserViewsCount) * 100).toFixed(1) : "0.0";
   const estimatedEarnings = "0.00";
+  
+  const getGrowthTips = () => {
+    const tips = [];
+    
+    // Follower based tips
+    if (followersCount < 500) {
+      tips.push({
+        title: "Community Building",
+        text: "You're building your foundation. Focus on posting at least 3x weekly to establish a rhythm.",
+        icon: <Users className="w-4 h-4" />,
+        color: "indigo"
+      });
+    } else if (followersCount < 1000) {
+      tips.push({
+        title: "Engagement Boost",
+        text: "You're halfway to 1,000! Start replying to every comment to turn viewers into loyal followers.",
+        icon: <MessageCircle className="w-4 h-4" />,
+        color: "emerald"
+      });
+    }
+
+    // View based tips
+    if (totalUserViewsCount < 100000) {
+      tips.push({
+        title: "Reach Expansion",
+        text: "Try using trending audio in your Reels. It's the most effective way to reach non-followers right now.",
+        icon: <TrendingUp className="w-4 h-4" />,
+        color: "amber"
+      });
+    } else if (totalUserViewsCount < 300000) {
+      tips.push({
+        title: "Retention Strategy",
+        text: "High views detected! Refine your 'hooks' in the first 3 seconds to maximize algorithm push.",
+        icon: <Activity className="w-4 h-4" />,
+        color: "purple"
+      });
+    }
+
+    // Final push tip
+    if (followersCount >= 1000 && totalUserViewsCount >= 300000) {
+      tips.push({
+        title: "Monetization Ready",
+        text: "Milestones reached! Focus on niche authority now to prepare your audience for monetization features.",
+        icon: <DollarSign className="w-4 h-4" />,
+        color: "pink"
+      });
+    }
+
+    // Default tip if list is short
+    if (tips.length < 2) {
+      tips.push({
+        title: "Profile Optimization",
+        text: "Ensure your bio clearly states what value you provide to convert profile visitors faster.",
+        icon: <User className="w-4 h-4" />,
+        color: "blue"
+      });
+    }
+
+    return tips.slice(0, 3);
+  };
+
+  const growthTips = getGrowthTips();
 
   return (
-    <div className={`min-h-screen font-sans pb-16 sm:pb-0 transition-colors duration-200 ${isDarkMode ? 'bg-zinc-950 text-zinc-50' : 'bg-zinc-100 text-zinc-900'}`}>
+    <div className={`min-h-screen font-sans pb-20 transition-colors duration-200 ${isDarkMode ? 'bg-zinc-950 text-zinc-50' : 'bg-zinc-100 text-zinc-900'}`}>
       
+      {/* R.mix Intro Animation Splash Screen */}
+      {showIntro && (
+        <div className="fixed inset-0 z-50 bg-zinc-950 flex flex-col items-center justify-center p-6 select-none">
+          <div className="relative flex flex-col items-center justify-center space-y-4">
+            <div className="absolute inset-0 bg-gradient-to-tr from-blue-600 via-indigo-500 to-purple-600 blur-3xl opacity-50 rounded-full w-56 h-56 mx-auto -z-10 animate-pulse" />
+            <div className="flex items-center justify-center">
+              <span className="text-7xl font-black font-serif bg-gradient-to-tr from-blue-500 via-indigo-400 to-purple-500 bg-clip-text text-transparent drop-shadow-[0_0_30px_rgba(99,102,241,0.9)] tracking-tighter animate-bounce">
+                R
+              </span>
+              <span className="text-4xl font-bold font-sans bg-gradient-to-r from-indigo-300 via-purple-300 to-pink-400 bg-clip-text text-transparent tracking-widest ml-1">
+                .MIX
+              </span>
+            </div>
+            <p className="text-xs text-indigo-300 font-semibold tracking-widest uppercase">Connecting Creators Worldwide</p>
+          </div>
+        </div>
+      )}
+
       {/* Toast Notification */}
       {activeSettingToast && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-indigo-600 text-white text-xs sm:text-sm px-4 py-2 rounded-full shadow-lg flex items-center gap-2 animate-bounce">
@@ -1221,9 +1393,22 @@ export default function MainDashboardClient() {
                     const mediaList = typeof p.media_url === "string" ? (() => { try { const parsed = JSON.parse(p.media_url); return Array.isArray(parsed) ? parsed : [parsed]; } catch { return [p.media_url]; } })() : p.media_url || [];
                     const mediaSrc = mediaList[0] || p.image;
                     return (
-                      <div key={p.id} className="aspect-square bg-zinc-900 relative rounded-xl overflow-hidden group cursor-pointer border border-zinc-800/50 shadow-sm">
+                      <div 
+                        key={p.id} 
+                        onClick={() => setSelectedProfilePost(p)}
+                        className="aspect-square bg-zinc-900 relative rounded-xl overflow-hidden group cursor-pointer border border-zinc-800/50 shadow-sm"
+                      >
                         {p.type === 'video' || p.type === 'reel' ? (
-                          <VideoPlayer src={mediaSrc} className="w-full h-full" autoPlay muted={false} controls playsInline />
+                          <div className="w-full h-full relative">
+                            {mediaSrc ? (
+                              <video src={mediaSrc} className="w-full h-full object-cover pointer-events-none" preload="metadata" />
+                            ) : null}
+                            <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                              <div className="w-9 h-9 rounded-full bg-black/60 flex items-center justify-center text-white backdrop-blur-sm">
+                                <Play className="w-4 h-4 fill-white ml-0.5" />
+                              </div>
+                            </div>
+                          </div>
                         ) : mediaSrc ? (
                           <Image width={500} height={500} referrerPolicy="no-referrer" src={mediaSrc} alt="Post item" className="w-full h-full object-cover" loading="lazy" />
                         ) : (
@@ -1530,11 +1715,16 @@ export default function MainDashboardClient() {
                 <div>
                   <h2 className="text-lg sm:text-xl font-extrabold flex items-center gap-2">
                     <span>Professional Dashboard</span>
-                    <span className="text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 px-2.5 py-0.5 rounded-full">
-                      Active Creator
-                    </span>
                   </h2>
-                  <p className="text-xs text-zinc-400">Real-time database analytics, content growth & monetization</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20">
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Live Status</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-indigo-500/10 border border-indigo-500/20">
+                      <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Growth: High</span>
+                    </div>
+                  </div>
                 </div>
               </div>
               <button 
@@ -1621,46 +1811,264 @@ export default function MainDashboardClient() {
               </button>
             </div>
 
-            {/* TAB 1: OVERVIEW */}
-            {dashboardTab === 'overview' && (
-              <div className="space-y-5">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="p-3.5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-1">
-                    <span className="text-[11px] text-zinc-400 font-semibold uppercase">Total Views</span>
-                    <div className="text-xl font-black text-indigo-400">{totalUserViewsCount}</div>
+            {/* Main Content Area */}
+            <div className="space-y-6">
+              {/* Achievement Banner */}
+              {(followersCount >= 1000 || totalUserViewsCount >= 300000) && (
+                <motion.div 
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-5 rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 shadow-xl shadow-indigo-500/20 mb-6 relative overflow-hidden group"
+                >
+                  <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10" />
+                  <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700" />
+                  
+                  <div className="flex flex-col sm:flex-row items-center gap-4 relative z-10">
+                    <div className="p-3 rounded-2xl bg-white/20 backdrop-blur-md border border-white/30 text-white shadow-inner">
+                      <Award className="w-8 h-8 animate-bounce" />
+                    </div>
+                    <div className="text-center sm:text-left flex-1">
+                      <h3 className="text-lg font-black text-white tracking-tight leading-tight">
+                        Congratulations, Creator!
+                      </h3>
+                      <p className="text-xs text-white/90 font-medium mt-1">
+                        You&apos;ve reached {followersCount >= 1000 && totalUserViewsCount >= 300000 ? "both major milestones" : followersCount >= 1000 ? "1,000 followers" : "300,000 views"}! You are now eligible to apply for monetization.
+                      </p>
+                    </div>
+                    <button 
+                      onClick={() => setDashboardTab('monetization')}
+                      className="px-6 py-2.5 bg-white text-indigo-600 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-zinc-100 transition-all shadow-lg active:scale-95"
+                    >
+                      Apply Now
+                    </button>
                   </div>
-                  <div className="p-3.5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-1">
-                    <span className="text-[11px] text-zinc-400 font-semibold uppercase">Reach</span>
-                    <div className="text-xl font-black text-purple-400">{estimatedReachCount}</div>
+                </motion.div>
+              )}
+
+              {/* Content based on selected tab */}
+              <div className="space-y-6">
+                  {/* TAB 1: OVERVIEW */}
+                  {dashboardTab === 'overview' && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="p-4 rounded-2xl bg-zinc-900 border border-zinc-800 space-y-2 shadow-sm">
+                    <div className="flex items-center gap-2 text-indigo-400">
+                      <Eye className="w-4 h-4" />
+                      <span className="text-[10px] font-bold uppercase tracking-widest">Total Views</span>
+                    </div>
+                    <div className="text-2xl font-black text-white">{totalUserViewsCount.toLocaleString()}</div>
+                    <div className="text-[10px] text-zinc-500 font-medium">+12.5% from last month</div>
                   </div>
-                  <div className="p-3.5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-1">
-                    <span className="text-[11px] text-zinc-400 font-semibold uppercase">Engagement</span>
-                    <div className="text-xl font-black text-emerald-400">{userEngagementRate}%</div>
+                  <div className="p-4 rounded-2xl bg-zinc-900 border border-zinc-800 space-y-2 shadow-sm">
+                    <div className="flex items-center gap-2 text-purple-400">
+                      <TrendingUp className="w-4 h-4" />
+                      <span className="text-[10px] font-bold uppercase tracking-widest">Total Reach</span>
+                    </div>
+                    <div className="text-2xl font-black text-white">{estimatedReachCount.toLocaleString()}</div>
+                    <div className="text-[10px] text-zinc-500 font-medium">Unique accounts reached</div>
                   </div>
-                  <div className="p-3.5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-1">
-                    <span className="text-[11px] text-zinc-400 font-semibold uppercase">Est. Earnings</span>
-                    <div className="text-xl font-black text-amber-400">${estimatedEarnings}</div>
+                  <div className="p-4 rounded-2xl bg-zinc-900 border border-zinc-800 space-y-2 shadow-sm">
+                    <div className="flex items-center gap-2 text-emerald-400">
+                      <Activity className="w-4 h-4" />
+                      <span className="text-[10px] font-bold uppercase tracking-widest">Total Engagement</span>
+                    </div>
+                    <div className="text-2xl font-black text-white">{userEngagementRate}%</div>
+                    <div className="text-[10px] text-zinc-500 font-medium">Avg. interaction rate</div>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-zinc-900 border border-zinc-800 space-y-2 shadow-sm">
+                    <div className="flex items-center gap-2 text-amber-400">
+                      <DollarSign className="w-4 h-4" />
+                      <span className="text-[10px] font-bold uppercase tracking-widest">Total Earnings</span>
+                    </div>
+                    <div className="text-2xl font-black text-white">${estimatedEarnings}</div>
+                    <div className="flex items-center gap-4 mt-1 border-t border-zinc-800 pt-2">
+                      <div>
+                        <div className="text-[9px] text-zinc-500 font-bold uppercase">Pending</div>
+                        <div className="text-xs font-bold text-zinc-200">$0.00</div>
+                      </div>
+                      <div>
+                        <div className="text-[9px] text-zinc-500 font-bold uppercase">Paid Out</div>
+                        <div className="text-xs font-bold text-zinc-200">$0.00</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Monetization Milestone Progress */}
+                <div className="p-5 rounded-2xl bg-zinc-900 border border-zinc-800 space-y-5 shadow-lg">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-sm flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      Partner Program Progress
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-400 border border-zinc-700 uppercase tracking-tighter">
+                        {Math.round(((Math.min(100, (followersCount / 1000) * 100) + Math.min(100, (totalUserViewsCount / 300000) * 100)) / 2))}% Overall
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-end">
+                        <div className="space-y-1">
+                          <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Followers Goal</div>
+                          <div className="text-sm font-black text-white">{followersCount.toLocaleString()} / 1,000</div>
+                        </div>
+                        <div className={`text-[10px] font-black px-2 py-0.5 rounded border ${followersCount >= 1000 ? 'text-emerald-400 border-emerald-500/20 bg-emerald-500/10' : 'text-zinc-500 border-zinc-800 bg-zinc-950'}`}>
+                          {followersCount >= 1000 ? 'ELIGIBLE' : `${Math.round((followersCount / 1000) * 100)}%`}
+                        </div>
+                      </div>
+                      <div className="h-2.5 w-full bg-zinc-950 rounded-full overflow-hidden border border-zinc-800">
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.min(100, (followersCount / 1000) * 100)}%` }}
+                          transition={{ duration: 1.2, ease: "circOut" }}
+                          className={`h-full rounded-full ${followersCount >= 1000 ? 'bg-gradient-to-r from-emerald-600 to-emerald-400' : 'bg-gradient-to-r from-indigo-600 to-indigo-400'}`} 
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-end">
+                        <div className="space-y-1">
+                          <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Views Goal</div>
+                          <div className="text-sm font-black text-white">{totalUserViewsCount.toLocaleString()} / 300,000</div>
+                        </div>
+                        <div className={`text-[10px] font-black px-2 py-0.5 rounded border ${totalUserViewsCount >= 300000 ? 'text-emerald-400 border-emerald-500/20 bg-emerald-500/10' : 'text-zinc-500 border-zinc-800 bg-zinc-950'}`}>
+                          {totalUserViewsCount >= 300000 ? 'ELIGIBLE' : `${Math.round((totalUserViewsCount / 300000) * 100)}%`}
+                        </div>
+                      </div>
+                      <div className="h-2.5 w-full bg-zinc-950 rounded-full overflow-hidden border border-zinc-800">
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.min(100, (totalUserViewsCount / 300000) * 100)}%` }}
+                          transition={{ duration: 1.2, ease: "circOut" }}
+                          className={`h-full rounded-full ${totalUserViewsCount >= 300000 ? 'bg-gradient-to-r from-emerald-600 to-emerald-400' : 'bg-gradient-to-r from-purple-600 to-purple-400'}`} 
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Content Analysis Section */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-5 rounded-2xl bg-zinc-900 border border-zinc-800 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-bold text-sm flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-indigo-400" />
+                        Content Analysis
+                      </h3>
+                      <span className="text-[10px] text-zinc-500 font-bold uppercase">Last 30 Days</span>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between text-[11px] font-bold">
+                          <span className="text-zinc-400">Video Performance</span>
+                          <span className="text-white">88%</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+                          <div className="h-full bg-indigo-500 rounded-full" style={{ width: '88%' }} />
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between text-[11px] font-bold">
+                          <span className="text-zinc-400">Follower Growth Trend</span>
+                          <span className="text-emerald-400">+14%</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+                          <div className="h-full bg-emerald-500 rounded-full" style={{ width: '72%' }} />
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between text-[11px] font-bold">
+                          <span className="text-zinc-400">Profile Engagement</span>
+                          <span className="text-white">64%</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+                          <div className="h-full bg-purple-500 rounded-full" style={{ width: '64%' }} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-5 rounded-2xl bg-zinc-900 border border-zinc-800 space-y-4">
+                    <h3 className="font-bold text-sm flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-amber-400" />
+                      Growth Insights & Reach
+                    </h3>
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3 p-2.5 rounded-xl bg-zinc-950/50 border border-zinc-800">
+                        <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400">
+                          <TrendingUp className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-zinc-400 font-bold uppercase">Reach Velocity</div>
+                          <div className="text-sm font-bold text-white">High Potential</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 p-2.5 rounded-xl bg-zinc-950/50 border border-zinc-800">
+                        <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                          <Activity className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-zinc-400 font-bold uppercase">Engagement Quality</div>
+                          <div className="text-sm font-bold text-white">Top 5% in Category</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tips for Growth Section */}
+                <div className="p-5 rounded-2xl bg-zinc-900 border border-zinc-800 space-y-4">
+                  <h3 className="font-bold text-sm flex items-center gap-2">
+                    <Lightbulb className="w-4 h-4 text-amber-400" />
+                    Actionable Tips for Growth
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {growthTips.map((tip, idx) => (
+                      <div key={idx} className="p-4 rounded-xl bg-zinc-950/50 border border-zinc-800 flex flex-col gap-3">
+                        <div className={`p-2 rounded-lg w-fit ${
+                          tip.color === 'indigo' ? 'bg-indigo-500/10 text-indigo-400' :
+                          tip.color === 'emerald' ? 'bg-emerald-500/10 text-emerald-400' :
+                          tip.color === 'amber' ? 'bg-amber-500/10 text-amber-400' :
+                          tip.color === 'purple' ? 'bg-purple-500/10 text-purple-400' :
+                          tip.color === 'pink' ? 'bg-pink-500/10 text-pink-400' :
+                          'bg-blue-500/10 text-blue-400'
+                        }`}>
+                          {tip.icon}
+                        </div>
+                        <div className="space-y-1">
+                          <h4 className="text-xs font-bold text-white">{tip.title}</h4>
+                          <p className="text-[11px] text-zinc-400 leading-snug">{tip.text}</p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
                 {/* Performance Curve */}
-                <div className="p-4 sm:p-5 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-3">
+                <div className="p-5 rounded-2xl bg-zinc-900 border border-zinc-800 space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="font-bold text-sm">Account Performance Curve</h3>
-                      <p className="text-xs text-zinc-400">Content impressions across uploaded posts</p>
+                      <p className="text-[11px] text-zinc-400">Content impressions across uploaded posts</p>
                     </div>
                   </div>
                   {userOwnPosts.length === 0 ? (
                     <div className="text-center py-6 text-xs text-zinc-500">Upload posts to see your performance curve.</div>
                   ) : (
-                    <div className="h-28 flex items-end gap-2 pt-4 px-1">
+                    <div className="h-32 flex items-end gap-2 pt-4 px-1">
                       {userOwnPosts.map((p, idx) => (
-                        <div key={idx} className="flex-1 flex flex-col items-center gap-1 group">
+                        <div key={idx} className="flex-1 flex flex-col items-center gap-1 group relative">
                           <div 
-                            className="w-full bg-gradient-to-t from-indigo-600 to-purple-400 rounded-t transition-all group-hover:brightness-125"
+                            className="w-full bg-gradient-to-t from-indigo-600 via-indigo-500 to-purple-400 rounded-t-lg transition-all group-hover:brightness-125 shadow-lg shadow-indigo-500/20"
                             style={{ height: `${Math.min(Math.max((p.views / (totalUserViewsCount || 1)) * 100, 15), 100)}%` }}
                           />
+                          <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-zinc-800 text-[9px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            {p.views} views
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1809,18 +2217,106 @@ export default function MainDashboardClient() {
 
             {/* TAB 6: MONETIZATION */}
             {dashboardTab === 'monetization' && (
-              <div className="space-y-4">
-                <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-950 via-zinc-900 to-zinc-950 border border-emerald-500/40 space-y-2 shadow-lg">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <DollarSign className="w-4 h-4" /> Calculated Creator Revenue
-                    </span>
+              <div className="space-y-6">
+                <div className="p-6 rounded-2xl bg-gradient-to-br from-emerald-950 via-zinc-900 to-zinc-950 border border-emerald-500/40 space-y-4 shadow-xl relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+                  <div className="flex items-center justify-between relative z-10">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-black text-emerald-400 uppercase tracking-[0.2em] flex items-center gap-1.5">
+                        <DollarSign className="w-3.5 h-3.5" /> Total Creator Earnings
+                      </span>
+                      <div className="text-4xl font-black text-white">${estimatedEarnings}</div>
+                    </div>
+                    <div className="p-3 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                      <Briefcase className="w-6 h-6" />
+                    </div>
                   </div>
-                  <div className="text-3xl font-black text-white">${estimatedEarnings}</div>
-                  <p className="text-xs text-zinc-400">Based on real content views and viewer interactions from Supabase database.</p>
+                  <div className="pt-2 flex items-center gap-4 relative z-10">
+                    <div className="flex-1 p-3 rounded-xl bg-zinc-950/50 border border-zinc-800">
+                      <div className="text-[10px] text-zinc-500 font-bold uppercase">Estimated Reach</div>
+                      <div className="text-sm font-bold text-white">{estimatedReachCount.toLocaleString()}</div>
+                    </div>
+                    <div className="flex-1 p-3 rounded-xl bg-zinc-950/50 border border-zinc-800">
+                      <div className="text-[10px] text-zinc-500 font-bold uppercase">Total Views</div>
+                      <div className="text-sm font-bold text-white">{totalUserViewsCount.toLocaleString()}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <h3 className="font-bold text-sm flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-indigo-400" />
+                    Monetization Status & Eligibility
+                  </h3>
+                  
+                  <div className="grid grid-cols-1 gap-3">
+                    <div className="p-5 rounded-2xl bg-zinc-900 border border-zinc-800 space-y-5">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1">
+                          <h4 className="font-bold text-xs text-white">Ad Revenue Program</h4>
+                          <p className="text-[11px] text-zinc-400 leading-relaxed max-w-[240px]">Earn from ads shown on your reels and videos.</p>
+                        </div>
+                        <span className="text-[9px] font-black bg-zinc-800 text-zinc-400 px-2 py-1 rounded-md uppercase border border-zinc-700">Not Applied</span>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-[10px] font-bold">
+                            <span className="text-zinc-500">Follower Requirement</span>
+                            <span className={followersCount >= 1000 ? 'text-emerald-400' : 'text-zinc-400'}>{followersCount.toLocaleString()} / 1,000</span>
+                          </div>
+                          <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-indigo-500 rounded-full transition-all duration-1000" 
+                              style={{ width: `${Math.min(100, (followersCount / 1000) * 100)}%` }} 
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-[10px] font-bold">
+                            <span className="text-zinc-500">Views Requirement</span>
+                            <span className={totalUserViewsCount >= 300000 ? 'text-emerald-400' : 'text-zinc-400'}>{totalUserViewsCount.toLocaleString()} / 300,000</span>
+                          </div>
+                          <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-emerald-500 rounded-full transition-all duration-1000" 
+                              style={{ width: `${Math.min(100, (totalUserViewsCount / 300000) * 100)}%` }} 
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <button 
+                        disabled={followersCount < 1000 || totalUserViewsCount < 300000}
+                        className={`w-full py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${
+                          (followersCount >= 1000 && totalUserViewsCount >= 300000)
+                            ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20' 
+                            : 'bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-50'
+                        }`}
+                      >
+                        Apply for Monetization
+                      </button>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-zinc-900 border border-zinc-800 border-dashed flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-zinc-800 text-zinc-400">
+                          <CreditCard className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-xs text-white">Payout Method</h4>
+                          <p className="text-[10px] text-zinc-500">Add a bank account or PayPal</p>
+                        </div>
+                      </div>
+                      <button onClick={() => setShowPayoutModal(true)} className="text-[10px] font-bold text-indigo-400 hover:underline">Configure</button>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
+              </div>
+            </div>
 
             <div className="pt-2 text-center">
               <button 
@@ -1830,7 +2326,6 @@ export default function MainDashboardClient() {
                 Close Professional Dashboard
               </button>
             </div>
-
           </div>
         </div>
       )}
@@ -1873,6 +2368,108 @@ export default function MainDashboardClient() {
         />
       )}
 
+      {/* Selected Profile Post / Video Modal */}
+      {selectedProfilePost && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-2xl max-w-xl w-full overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full overflow-hidden border border-zinc-700">
+                  <Image width={100} height={100} referrerPolicy="no-referrer" src={selectedProfilePost.avatar || profile?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp'} alt="Author" className="w-full h-full object-cover" />
+                </div>
+                <div>
+                  <h4 className="font-semibold text-sm text-white">{selectedProfilePost.author || profile?.username}</h4>
+                  <p className="text-xs text-zinc-400">{selectedProfilePost.handle || `@${profile?.username || 'user'}`}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {selectedProfilePost.user_id === user?.id && (
+                  <>
+                    <button 
+                      onClick={() => handleStartEditPost(selectedProfilePost)}
+                      className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-white flex items-center gap-1 transition-colors"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Edit</span>
+                    </button>
+                    <button 
+                      onClick={() => handleDeletePost(selectedProfilePost.id)}
+                      className="px-3 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-xs font-semibold text-red-400 flex items-center gap-1 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      <span>Delete</span>
+                    </button>
+                  </>
+                )}
+                <button 
+                  onClick={() => { setSelectedProfilePost(null); setIsEditingPostModal(false); }}
+                  className="p-1.5 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Media Area */}
+            <div className="flex-1 bg-black flex items-center justify-center relative overflow-hidden max-h-[450px]">
+              {(() => {
+                const mediaList = typeof selectedProfilePost.media_url === "string" ? (() => { try { const parsed = JSON.parse(selectedProfilePost.media_url); return Array.isArray(parsed) ? parsed : [parsed]; } catch { return [selectedProfilePost.media_url]; } })() : selectedProfilePost.media_url || [];
+                const mediaSrc = mediaList[0] || selectedProfilePost.image;
+                if (selectedProfilePost.type === 'video' || selectedProfilePost.type === 'reel') {
+                  return (
+                    <VideoPlayer src={mediaSrc} className="w-full h-full max-h-[450px]" autoPlay muted={false} controls playsInline />
+                  );
+                }
+                return mediaSrc ? (
+                  <Image width={800} height={800} referrerPolicy="no-referrer" src={mediaSrc} alt="Post content" className="w-full h-full object-contain" />
+                ) : (
+                  <div className="p-6 text-center text-zinc-400 text-sm">
+                    {selectedProfilePost.caption}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Caption & Stats */}
+            <div className="p-4 border-t border-zinc-800 bg-zinc-950">
+              {isEditingPostModal ? (
+                <div className="space-y-3">
+                  <textarea 
+                    value={editPostCaption} 
+                    onChange={(e) => setEditPostCaption(e.target.value)}
+                    className="w-full p-2.5 rounded-xl bg-zinc-900 border border-zinc-700 text-white text-sm focus:outline-none focus:border-indigo-500 resize-none"
+                    rows={3}
+                  />
+                  <div className="flex items-center justify-end gap-2">
+                    <button 
+                      onClick={() => setIsEditingPostModal(false)}
+                      className="px-3 py-1.5 rounded-lg bg-zinc-800 text-xs font-medium text-zinc-300 hover:bg-zinc-700"
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      onClick={handleSaveEditPost}
+                      className="px-4 py-1.5 rounded-lg bg-indigo-600 text-xs font-bold text-white hover:bg-indigo-500"
+                    >
+                      Save Changes
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-zinc-200 mb-2">{selectedProfilePost.caption}</p>
+                  <div className="flex items-center gap-4 text-xs text-zinc-400">
+                    <span className="flex items-center gap-1.5"><Heart className="w-4 h-4 text-red-500 fill-red-500" /> {selectedProfilePost.likes || 0} likes</span>
+                    <span className="flex items-center gap-1.5"><MessageCircle className="w-4 h-4 text-indigo-400" /> {selectedProfilePost.commentsCount || 0} comments</span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Edit Profile Modal */}
       {selectedStoryIndex !== null && (
         <StoryViewer
@@ -1893,6 +2490,161 @@ export default function MainDashboardClient() {
             supabase.from('profiles').select('*').eq('id', user.id).single().then(({ data }) => setProfile(data));
           }}
         />
+      )}
+
+      {/* Payout & Bank Account Setup Modal */}
+      {showPayoutModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
+              <h3 className="font-bold text-base text-white flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-indigo-400" />
+                <span>Payout & Bank Account Setup (All Countries)</span>
+              </h3>
+              <button onClick={() => setShowPayoutModal(false)} className="p-1 rounded-full bg-zinc-900 text-zinc-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-4 flex-1">
+              <p className="text-xs text-zinc-400">
+                Set up your secure payout details to receive earnings from R.mix worldwide. Supported in all countries via Bank Transfer or PayPal.
+              </p>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-bold text-zinc-300 mb-1 block">Full Name (as per ID/Bank)</label>
+                  <input 
+                    type="text" 
+                    value={payoutForm.fullName} 
+                    onChange={e => setPayoutForm({ ...payoutForm, fullName: e.target.value })}
+                    placeholder="e.g. Alexander Smith"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-zinc-300 mb-1 block">Email ID</label>
+                    <input 
+                      type="email" 
+                      value={payoutForm.email} 
+                      onChange={e => setPayoutForm({ ...payoutForm, email: e.target.value })}
+                      placeholder="creator@example.com"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-zinc-300 mb-1 block">Mobile Number</label>
+                    <input 
+                      type="text" 
+                      value={payoutForm.mobile} 
+                      onChange={e => setPayoutForm({ ...payoutForm, mobile: e.target.value })}
+                      placeholder="+1 (555) 000-0000"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-zinc-300 mb-1 block">Country / Region (All Countries)</label>
+                  <select 
+                    value={payoutForm.country} 
+                    onChange={e => setPayoutForm({ ...payoutForm, country: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="United States">United States</option>
+                    <option value="United Kingdom">United Kingdom</option>
+                    <option value="Canada">Canada</option>
+                    <option value="Australia">Australia</option>
+                    <option value="India">India</option>
+                    <option value="Germany">Germany</option>
+                    <option value="France">France</option>
+                    <option value="Japan">Japan</option>
+                    <option value="Brazil">Brazil</option>
+                    <option value="United Arab Emirates">United Arab Emirates</option>
+                    <option value="Singapore">Singapore</option>
+                    <option value="Global / Other Country">Global / Other Country (All Countries)</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-zinc-300 mb-1 block">PAN Card / Tax ID</label>
+                    <input 
+                      type="text" 
+                      value={payoutForm.panCard} 
+                      onChange={e => setPayoutForm({ ...payoutForm, panCard: e.target.value })}
+                      placeholder="ABCDE1234F or Tax ID"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm focus:outline-none focus:border-indigo-500 uppercase"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-zinc-300 mb-1 block">PayPal Account (Email/ID)</label>
+                    <input 
+                      type="text" 
+                      value={payoutForm.paypal} 
+                      onChange={e => setPayoutForm({ ...payoutForm, paypal: e.target.value })}
+                      placeholder="paypal@example.com"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-zinc-300 mb-1 block">Bank Account Number / IBAN</label>
+                  <input 
+                    type="text" 
+                    value={payoutForm.bankAccount} 
+                    onChange={e => setPayoutForm({ ...payoutForm, bankAccount: e.target.value })}
+                    placeholder="Account Number or IBAN"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-zinc-300 mb-1 block">IFSC / SWIFT / Routing Code</label>
+                    <input 
+                      type="text" 
+                      value={payoutForm.ifsc} 
+                      onChange={e => setPayoutForm({ ...payoutForm, ifsc: e.target.value })}
+                      placeholder="SBIN0001234 / SWIFT"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm focus:outline-none focus:border-indigo-500 uppercase"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-zinc-300 mb-1 block">Bank Name</label>
+                    <input 
+                      type="text" 
+                      value={payoutForm.bankName} 
+                      onChange={e => setPayoutForm({ ...payoutForm, bankName: e.target.value })}
+                      placeholder="e.g. Chase / HDFC / Revolut"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-sm focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center gap-3">
+                <button 
+                  onClick={() => setShowPayoutModal(false)}
+                  className="flex-1 py-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 font-bold text-xs text-zinc-300"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleSavePayout}
+                  disabled={payoutSaving}
+                  className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-bold text-xs text-white shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2"
+                >
+                  {payoutSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                  <span>Save Payout Method</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
 

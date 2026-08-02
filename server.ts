@@ -7,10 +7,19 @@ const app = next({ dev });
 const handle = app.getRequestHandler();
 
 app.prepare().then(() => {
-  createServer((req: any, res: any) => {
+  const server = createServer((req: any, res: any) => {
     const parsedUrl = parse(req.url, true);
     handle(req, res, parsedUrl);
-  }).listen(3000, () => {
+  });
+
+  server.on('error', (err: any) => {
+    console.error('Server error:', err);
+  });
+
+  server.listen(3000, () => {
     console.log('> Ready on http://localhost:3000');
   });
+}).catch((err: any) => {
+  console.error('Error during app.prepare():', err);
+  process.exit(1);
 });

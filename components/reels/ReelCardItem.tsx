@@ -1,8 +1,8 @@
 "use client";
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import Image from 'next/image';
 import { VideoPlayer } from '../shared/VideoPlayer';
-import { VolumeX, Volume2, Music, Heart, MessageCircle, Share2, Bookmark } from 'lucide-react';
+import { VolumeX, Volume2, Music, Heart, MessageCircle, Share2, Bookmark, Eye } from 'lucide-react';
 
 export function ReelCardItem({
   reelItem,
@@ -22,6 +22,9 @@ export function ReelCardItem({
 }: any) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+  const [progress, setProgress] = useState(0);
+  const [showHeartPop, setShowHeartPop] = useState(false);
+  const [lastTap, setLastTap] = useState(0);
 
   const isActive = activeReelId === reelItem.id;
 
@@ -55,6 +58,18 @@ export function ReelCardItem({
     }
   }, [isActive]);
 
+  const handleDoubleTap = (e: React.MouseEvent) => {
+    const now = Date.now();
+    if (now - lastTap < 300) {
+      if (!reelItem.isLiked) {
+        handleLike(reelItem.id, reelItem.isLiked);
+      }
+      setShowHeartPop(true);
+      setTimeout(() => setShowHeartPop(false), 1000);
+    }
+    setLastTap(now);
+  };
+
   const isFollowing = followedUsers[reelItem.user_id] || followedUsers[reelItem.author] || false;
   const mediaList = typeof reelItem.media_url === "string" ? (() => { try { const p = JSON.parse(reelItem.media_url); return Array.isArray(p) ? p : [p]; } catch { return [reelItem.media_url]; } })() : reelItem.media_url || [];
   const mediaSrc = mediaList[0] || reelItem.image || 'https://assets.mixkit.co/videos/preview/mixkit-tree-branches-in-the-breeze-1187-large.mp4';
@@ -64,6 +79,7 @@ export function ReelCardItem({
       ref={cardRef}
       key={reelItem.id} 
       className="snap-start h-full min-h-[540px] max-h-[720px] my-2 relative rounded-2xl overflow-hidden bg-black text-white flex flex-col justify-end p-4 border border-zinc-800 shadow-2xl group"
+      onClick={handleDoubleTap}
     >
       <VideoPlayer 
         ref={videoRef}
@@ -73,10 +89,23 @@ export function ReelCardItem({
         muted={isReelsMuted} 
         playsInline 
         preload="metadata"
-        onTimeUpdate={(e) => handleReelTimeUpdate(reelItem.id, (e.target as HTMLVideoElement).currentTime)}
+        onTimeUpdate={(e) => {
+          const vid = e.target as HTMLVideoElement;
+          handleReelTimeUpdate(reelItem.id, vid.currentTime);
+          if (vid.duration) {
+            setProgress((vid.currentTime / vid.duration) * 100);
+          }
+        }}
         onClick={() => setIsReelsMuted(!isReelsMuted)}
         controls={false}
       />
+
+      {/* Heart Pop Animation on Double Tap */}
+      {showHeartPop && (
+        <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
+          <Heart className="w-24 h-24 text-red-500 fill-red-500 animate-ping drop-shadow-[0_0_20px_rgba(239,68,68,0.8)]" />
+        </div>
+      )}
 
       {/* Sound Indicator Badge Overlay */}
       <button 
@@ -95,6 +124,12 @@ export function ReelCardItem({
           </>
         )}
       </button>
+
+      {/* View Counter Badge */}
+      <div className="absolute top-4 right-4 z-20 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md text-white border border-white/20 flex items-center gap-1.5 text-xs font-semibold shadow-lg">
+        <Eye className="w-3.5 h-3.5 text-indigo-400" />
+        <span>{(reelItem.views || 0).toLocaleString()} views</span>
+      </div>
 
       {/* Gradient Overlay */}
       <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80 z-10 pointer-events-none" />
@@ -214,6 +249,14 @@ export function ReelCardItem({
           <Music className="w-4 h-4 text-indigo-400" />
         </div>
 
+      </div>
+
+      {/* Video Progress Bar at Bottom */}
+      <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-800/80 z-30">
+        <div 
+          className="h-full bg-indigo-500 transition-all duration-100" 
+          style={{ width: `${progress}%` }} 
+        />
       </div>
     </div>
   );
