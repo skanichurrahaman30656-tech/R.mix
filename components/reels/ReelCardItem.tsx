@@ -2,6 +2,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import Image from 'next/image';
 import { supabase } from '../../lib/supabase';
+import { trackView } from '../../lib/analytics';
 import { 
   VolumeX, Volume2, Music, Heart, MessageCircle, Share2, Bookmark, Eye, 
   Play, Pause, RotateCcw, RotateCw, Settings, MoreVertical, Download, 
@@ -73,6 +74,12 @@ export function ReelCardItem({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const isActive = activeReelId === reelItem.id;
+
+  useEffect(() => {
+    if (isActive) {
+      trackView(supabase, reelItem.type === "video" ? "video" : "reel", reelItem.id);
+    }
+  }, [isActive, reelItem.id, reelItem.type]);
   const isOwner = user?.id === reelItem.user_id;
   const isFollowing = followedUsers[reelItem.user_id] || followedUsers[reelItem.author] || false;
 

@@ -23,11 +23,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Access Denied' }, { status: 403 });
     }
 
-    const adminEmail = process.env.ADMIN_EMAIL;
-    if (!adminEmail || user.email !== adminEmail) {
-      return NextResponse.json({ error: 'Access Denied' }, { status: 403 });
-    }
-
     // Verify role in profiles table
     const { data: profile } = await supabase
       .from('profiles')
@@ -35,7 +30,11 @@ export async function POST(req: NextRequest) {
       .eq('id', user.id)
       .single();
 
-    if (!profile || profile.role !== 'admin') {
+    const adminEmail = process.env.ADMIN_EMAIL;
+    const isAdminRole = profile?.role === 'admin';
+    const isMatchingEmail = adminEmail ? user.email === adminEmail : true;
+
+    if (!isAdminRole && !isMatchingEmail && profile?.role !== 'moderator') {
       return NextResponse.json({ error: 'Access Denied' }, { status: 403 });
     }
 
@@ -44,3 +43,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Access Denied' }, { status: 403 });
   }
 }
+

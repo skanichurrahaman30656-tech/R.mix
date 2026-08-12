@@ -1,0 +1,22 @@
+--- components/reels/ReelCardItem.tsx
++++ components/reels/ReelCardItem.tsx
+@@ -9,6 +9,7 @@
+   Sparkles, Smile, Image as ImageIcon, AtSign, Check, X, ChevronDown, ChevronUp, Clock
+ } from 'lucide-react';
++import { trackView } from '@/lib/analytics';
++import { supabase } from '@/lib/supabase';
+ 
+ export function ReelCardItem({
+@@ -82,6 +83,12 @@
+     setTimeout(() => setToastMessage(null), 2000);
+   };
+ 
++  useEffect(() => {
++    if (isActive) {
++      trackView(supabase, reelItem.type === 'video' ? 'video' : 'reel', reelItem.id);
++    }
++  }, [isActive, reelItem.id, reelItem.type]);
++
+   // Video Playback Control
+   useEffect(() => {
+     const video = videoRef.current;

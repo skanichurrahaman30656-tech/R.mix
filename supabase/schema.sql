@@ -11,9 +11,15 @@ create table if not exists public.profiles (
   website text,
   bio text,
   is_verified boolean default false,
+  is_banned boolean default false,
+  role text default 'user' check (role in ('user', 'creator', 'moderator', 'admin')),
   cover_url text,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
+
+-- Note: In an existing database you might need:
+-- alter table public.profiles add column if not exists role text default 'user' check (role in ('user', 'creator', 'moderator', 'admin'));
+
 
 alter table public.profiles enable row level security;
 drop policy if exists "Public profiles are viewable by everyone." on profiles;
@@ -51,6 +57,7 @@ create table if not exists public.posts (
   content text,
   media_url text,
   type text default 'text' check (type in ('text', 'image', 'video', 'reel')),
+  views BIGINT DEFAULT 0,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
@@ -233,6 +240,7 @@ create table if not exists public.reels (
   user_id uuid references public.profiles(id) on delete cascade not null,
   video_url text not null,
   caption text,
+  views BIGINT DEFAULT 0,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
@@ -255,6 +263,7 @@ create table if not exists public.videos (
   video_url text not null,
   title text,
   description text,
+  views BIGINT DEFAULT 0,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
@@ -338,3 +347,135 @@ create trigger update_messages_updated_at before update on public.messages for e
 drop trigger if exists update_post_views_updated_at on public.post_views;
 create trigger update_post_views_updated_at before update on public.post_views for each row execute procedure update_updated_at_column();
 
+
+-- 12. Reports Table
+create table if not exists public.reports (
+  id uuid default uuid_generate_v4() primary key,
+  reporter_id uuid references public.profiles(id) on delete cascade not null,
+  type text not null check (type in ('user', 'post', 'comment', 'reel', 'video', 'story')),
+  target_id uuid not null, -- ID of the reported entity
+  reason text not null,
+  status text default 'pending' check (status in ('pending', 'reviewing', 'resolved', 'dismissed')),
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+alter table public.reports enable row level security;
+drop policy if exists "Reports viewable by admin or moderator." on reports;
+create policy "Reports viewable by admin or moderator." on reports for select using (
+  exists (select 1 from public.profiles where id = auth.uid() and role in ('admin', 'moderator'))
+);
+drop policy if exists "Users can insert reports." on reports;
+create policy "Users can insert reports." on reports for insert with check (auth.uid() = reporter_id);
+drop policy if exists "Admins can update reports." on reports;
+create policy "Admins can update reports." on reports for update using (
+  exists (select 1 from public.profiles where id = auth.uid() and role in ('admin', 'moderator'))
+);
+
+
+-- 13. Monetization Requests Table
+create table if not exists public.monetization_requests (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  status text default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  notes text,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+alter table public.monetization_requests enable row level security;
+drop policy if exists "Monetization requests viewable by admin or owner." on monetization_requests;
+create policy "Monetization requests viewable by admin or owner." on monetization_requests for select using (
+  auth.uid() = user_id or exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+);
+drop policy if exists "Users can insert monetization requests." on monetization_requests;
+create policy "Users can insert monetization requests." on monetization_requests for insert with check (auth.uid() = user_id);
+drop policy if exists "Admins can update monetization requests." on monetization_requests;
+create policy "Admins can update monetization requests." on monetization_requests for update using (
+  exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+);
+
+create trigger update_reports_updated_at before update on public.reports for each row execute procedure update_updated_at_column();
+create trigger update_monetization_requests_updated_at before update on public.monetization_requests for each row execute procedure update_updated_at_column();
+
+
+
+-- RPC functions for view counting
+CREATE OR REPLACE FUNCTION increment_post_views(post_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  UPDATE public.posts SET views = COALESCE(views, 0) + 1 WHERE id = post_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION increment_reel_views(reel_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  UPDATE public.reels SET views = COALESCE(views, 0) + 1 WHERE id = reel_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION increment_video_views(video_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  UPDATE public.videos SET views = COALESCE(views, 0) + 1 WHERE id = video_id;
+END;
+$$;
+
+CREATE TABLE IF NOT EXISTS public.daily_analytics (
+  date DATE PRIMARY KEY DEFAULT CURRENT_DATE,
+  views BIGINT DEFAULT 0,
+  uploads BIGINT DEFAULT 0,
+  active_users BIGINT DEFAULT 0,
+  revenue BIGINT DEFAULT 0
+);
+ALTER TABLE public.daily_analytics ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public read daily_analytics" ON public.daily_analytics FOR SELECT USING (true);
+
+CREATE OR REPLACE FUNCTION increment_daily_views()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  INSERT INTO public.daily_analytics (date, views)
+  VALUES (CURRENT_DATE, 1)
+  ON CONFLICT (date) DO UPDATE
+  SET views = daily_analytics.views + 1;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION increment_daily_uploads()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  INSERT INTO public.daily_analytics (date, uploads)
+  VALUES (CURRENT_DATE, 1)
+  ON CONFLICT (date) DO UPDATE
+  SET uploads = daily_analytics.uploads + 1;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER on_post_created
+  AFTER INSERT ON public.posts
+  FOR EACH ROW EXECUTE PROCEDURE increment_daily_uploads();
+
+CREATE TRIGGER on_reel_created
+  AFTER INSERT ON public.reels
+  FOR EACH ROW EXECUTE PROCEDURE increment_daily_uploads();
+
+CREATE TRIGGER on_video_created
+  AFTER INSERT ON public.videos
+  FOR EACH ROW EXECUTE PROCEDURE increment_daily_uploads();

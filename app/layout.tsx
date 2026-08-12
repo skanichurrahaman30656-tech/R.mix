@@ -10,7 +10,6 @@ export const metadata: Metadata = {
   description: "Premium Social Experience",
 };
 
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">

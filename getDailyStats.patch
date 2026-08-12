@@ -1,0 +1,68 @@
+--- app/admin/AdminPageClient.tsx
++++ app/admin/AdminPageClient.tsx
+@@ -27,6 +27,7 @@
+   const [stories, setStories] = useState<any[]>([]);
+   const [comments, setComments] = useState<any[]>([]);
+   const [likesCount, setLikesCount] = useState(0);
++  const [dailyStats, setDailyStats] = useState<any[]>([]);
+   const [searchQuery, setSearchQuery] = useState("");
+   const [contentTypeFilter, setContentTypeFilter] = useState("all");
+ 
+@@ -37,17 +38,6 @@
+   const [maxStorageGB, setMaxStorageGB] = useState(500);
+ 
+   // Mock analytics & security logs
+-  const analyticsData = [
+-    { name: 'Mon', dau: 1200, uploads: 340, revenue: 1450 },
+-    { name: 'Tue', dau: 1350, uploads: 410, revenue: 1820 },
+-    { name: 'Wed', dau: 1280, uploads: 390, revenue: 1650 },
+-    { name: 'Thu', dau: 1550, uploads: 480, revenue: 2100 },
+-    { name: 'Fri', dau: 1890, uploads: 590, revenue: 2600 },
+-    { name: 'Sat', dau: 2200, uploads: 720, revenue: 3100 },
+-    { name: 'Sun', dau: 2100, uploads: 680, revenue: 2950 },
+-  ];
+-
+   const auditLogs = [
+     { id: 1, admin: "admin@rmix.live", action: "Verified creator account @sarah_design", timestamp: "2 mins ago", ip: "192.168.1.45" },
+@@ -85,6 +75,25 @@
+     verifyAndLoad();
+   }, [router]);
+ 
++  useEffect(() => {
++    if (!authorized) return;
++    const channel = supabase.channel('admin-analytics')
++      .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_analytics' }, () => {
++        fetchAdminData();
++      })
++      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => {
++        fetchAdminData();
++      })
++      .on('postgres_changes', { event: '*', schema: 'public', table: 'reels' }, () => {
++        fetchAdminData();
++      })
++      .on('postgres_changes', { event: '*', schema: 'public', table: 'videos' }, () => {
++        fetchAdminData();
++      })
++      .subscribe();
++    return () => { supabase.removeChannel(channel); };
++  }, [authorized]);
++
+   const fetchAdminData = async () => {
+     try {
+       const profilesRes = await supabase.from('profiles').select('*').order('created_at', { ascending: false }).then(res => res, () => ({ data: [] }));
+@@ -97,6 +106,7 @@
+       const likesRes = await supabase.from('likes').select('*', { count: 'exact', head: true }).then(res => res, () => ({ count: 0 }));
+       const reportsRes = await supabase.from('reports').select('*, reporter:profiles!reporter_id(username)').order('created_at', { ascending: false }).then(res => res, () => ({ data: [] }));
+       const monetizationRes = await supabase.from('monetization_requests').select('*, profiles(username)').order('created_at', { ascending: false }).then(res => res, () => ({ data: [] }));
++      const statsRes = await supabase.from('daily_analytics').select('*').order('date', { ascending: false }).limit(7).then(res => res, () => ({ data: [] }));
+ 
+       if (profilesRes.data) setProfiles(profilesRes.data);
+       if (postsRes.data) setPosts(postsRes.data);
+@@ -109,6 +119,7 @@
+       if (likesRes.count !== null && likesRes.count !== undefined) setLikesCount(likesRes.count);
+       if (reportsRes.data) setReportsList(reportsRes.data);
+       if (monetizationRes.data) setMonetizationRequests(monetizationRes.data);
++      if (statsRes.data) setDailyStats(statsRes.data.reverse());
+     } catch (e) {
+       console.error("Error fetching admin data:", e);
+     }
