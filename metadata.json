@@ -1,6 +1,6 @@
 {
   "name": "R.mix",
   "description": "An Instagram-style social media platform blending the best of video and image sharing.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["camera", "microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

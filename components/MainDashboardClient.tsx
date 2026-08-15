@@ -12,7 +12,7 @@ import {
   Image as ImageIcon, BarChart2, Users, Eye, TrendingUp, ChevronRight, 
   UserCheck, Shield, Lock, Bell, Moon, Globe, UserX, HelpCircle, 
   Info, ArrowLeft, Check, Activity, Edit3, Sun, Video, 
-  FileText, Music, UserPlus, Flame, Sparkles, Clock, X, Play, 
+  FileText, Music, UserPlus, Flame, Sparkles, Clock, X, Play, Radio, 
   Volume2, VolumeX, User, ArrowUpRight, BarChart3,
   Link as LinkIcon, MapPin, CheckCircle2, DollarSign, Star, Award, 
   Zap, Briefcase, Send, ShieldCheck, CreditCard, Lightbulb
@@ -22,10 +22,12 @@ import CreatePostModal from './shared/CreatePostModal';
 import { FeedPage } from './feed/FeedPage';
 import { SearchPage } from './search/SearchPage';
 import { ReelsPage } from './reels/ReelsPage';
+import { LivePage } from './live/LivePage';
 import EditProfileModal from './shared/EditProfileModal';
 import { motion } from 'motion/react';
 import { SettingsSystem } from "./settings/SettingsSystem";
 import { compressImage } from '@/lib/compress';
+import { rankAndPersonalizePosts, trackEngagementEvent } from '@/lib/recommendations';
 
 
 export default function MainDashboardClient() {
@@ -65,10 +67,10 @@ export default function MainDashboardClient() {
 
   const [loading, setLoading] = useState(true);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [viewMode, setViewMode] = useState<'feed' | 'reels' | 'profile' | 'settings' | 'search'>('feed');
+  const [viewMode, setViewMode] = useState<'feed' | 'reels' | 'profile' | 'settings' | 'search' | 'live'>('feed');
   useEffect(() => { window.scrollTo(0, 0); }, [viewMode]);
   const [profileTab, setProfileTab] = useState<'posts' | 'reels' | 'photos' | 'videos'>('posts');
-  const [dashboardTab, setDashboardTab] = useState<'overview' | 'analytics' | 'content' | 'audience' | 'engagement' | 'monetization'>('overview');
+  const [dashboardTab, setDashboardTab] = useState<'overview' | 'analytics' | 'content' | 'audience' | 'engagement' | 'monetization' | 'recommendations'>('overview');
   const [activeSettingToast, setActiveSettingToast] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
   const [showIntro, setShowIntro] = useState<boolean>(true);
@@ -93,6 +95,92 @@ export default function MainDashboardClient() {
   const [isEditingPostModal, setIsEditingPostModal] = useState(false);
   const [editPostCaption, setEditPostCaption] = useState('');
   const [showPayoutModal, setShowPayoutModal] = useState(false);
+  const [interestSignals, setInterestSignals] = useState<any[]>([]);
+  const [recommendationEvents, setRecommendationEvents] = useState<any[]>([]);
+  const [loadingViralTab, setLoadingViralTab] = useState(false);
+
+  const [activeLiveStreamsCount, setActiveLiveStreamsCount] = useState(0);
+  const [totalLiveViewersCount, setTotalLiveViewersCount] = useState(0);
+
+  const fetchLiveStats = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('live_sessions')
+        .select('viewer_count')
+        .eq('status', 'active');
+      if (!error && data) {
+        setActiveLiveStreamsCount(data.length);
+        const totalViewers = data.reduce((sum: number, item: any) => sum + (item.viewer_count || 0), 0);
+        setTotalLiveViewersCount(totalViewers);
+      }
+    } catch (err) {
+      console.error('Error fetching live stats for dashboard:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchLiveStats();
+    const liveStatsChannel = supabase
+      .channel('live-stats-monitor')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_sessions' }, () => {
+        fetchLiveStats();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(liveStatsChannel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Fetch Viral Recommendation Analytics when recommendations tab is selected
+  useEffect(() => {
+    if (dashboardTab !== 'recommendations' || !user) return;
+    
+    const fetchViralData = async () => {
+      setLoadingViralTab(true);
+      try {
+        // Fetch Interest Signals
+        const { data: signals, error: sigErr } = await supabase
+          .from('user_interest_signals')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('affinity_score', { ascending: false });
+        if (!sigErr && signals) {
+          setInterestSignals(signals);
+        }
+
+        // Fetch creator post IDs
+        const ownPostIds = posts.filter(p => p.user_id === user.id).map(p => p.id);
+        if (ownPostIds.length > 0) {
+          // Fetch events that happened on our own content
+          const { data: events, error: evErr } = await supabase
+            .from('recommendation_events')
+            .select(`
+              id,
+              event_type,
+              created_at,
+              watch_duration,
+              percentage_watched,
+              post_id,
+              posts:post_id ( content )
+            `)
+            .in('post_id', ownPostIds)
+            .order('created_at', { ascending: false })
+            .limit(10);
+          if (!evErr && events) {
+            setRecommendationEvents(events);
+          }
+        }
+      } catch (err) {
+        console.error('Error loading viral tab data:', err);
+      } finally {
+        setLoadingViralTab(false);
+      }
+    };
+
+    fetchViralData();
+  }, [dashboardTab, user, posts]);
   const [payoutForm, setPayoutForm] = useState({
     fullName: profile?.payout_full_name || profile?.full_name || '',
     bankAccount: profile?.payout_bank_account || '',
@@ -328,14 +416,14 @@ export default function MainDashboardClient() {
     fetchFollowData(user.id);
   };
 
-  const fetchSuggestedUsers = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .neq('id', userId)
-      .limit(6);
+  const fetchSuggestedUsers = async (userId?: string) => {
+    let query = supabase.from('profiles').select('*');
+    if (userId) {
+      query = query.neq('id', userId);
+    }
+    const { data, error } = await query.limit(6);
 
-    if (error) console.error('Error fetching posts:', error);
+    if (error) console.error('Error fetching suggested users:', error);
     if (data) {
       setSuggestedUsers(data);
     }
@@ -473,18 +561,20 @@ export default function MainDashboardClient() {
           created_at: p.created_at
         };
       });
+      
+      const rankedPosts = await rankAndPersonalizePosts(supabase, formattedPosts, userId || user?.id || null);
 
       if (isLoadMore) {
         setPosts(prev => {
           const newPosts = [...prev];
-          formattedPosts.forEach(p => {
+          rankedPosts.forEach(p => {
             if (!newPosts.find(np => np.id === p.id)) newPosts.push(p);
           });
           return newPosts;
         });
         setHasMorePosts(data.length === POSTS_LIMIT);
       } else {
-        setPosts(formattedPosts);
+        setPosts(rankedPosts);
         if (pageIndex === 0) {
           setHasMorePosts(data.length === POSTS_LIMIT);
         }
@@ -497,14 +587,17 @@ export default function MainDashboardClient() {
   useEffect(() => {
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      setUser(session?.user ?? null);
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
       
-      if (!session?.user) {
-        router.push('/login');
+      if (!currentUser) {
+        fetchPosts();
+        fetchStories();
+        fetchSuggestedUsers();
         return;
       }
 
-      const uid = session.user.id;
+      const uid = currentUser.id;
 
       const { data } = await supabase
         .from('profiles')
@@ -523,21 +616,28 @@ export default function MainDashboardClient() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
-        setUser(session?.user ?? null);
-        if (session?.user) {
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+        if (currentUser) {
           supabase
             .from('profiles')
             .select('*')
-            .eq('id', session.user.id)
+            .eq('id', currentUser.id)
             .single()
             .then(({ data }) => setProfile(data));
-          fetchPosts(session.user.id);
-          fetchFollowData(session.user.id);
-          fetchSuggestedUsers(session.user.id);
-          fetchNotifications(session.user.id);
+          fetchPosts(currentUser.id);
+          fetchFollowData(currentUser.id);
+          fetchSuggestedUsers(currentUser.id);
+          fetchNotifications(currentUser.id);
         } else {
           setProfile(null);
-          router.push('/login');
+          if (_event === 'SIGNED_OUT') {
+            router.push('/login');
+          } else {
+            fetchPosts();
+            fetchStories();
+            fetchSuggestedUsers();
+          }
         }
       }
     );
@@ -1111,6 +1211,16 @@ export default function MainDashboardClient() {
             user={user}
           />
         )}
+        {/* ==================== VIEW MODE 6: LIVE STREAMING SECTION ==================== */}
+        {viewMode === 'live' && (
+          <LivePage
+            user={user}
+            profile={profile}
+            isDarkMode={isDarkMode}
+            supabase={supabase}
+            onClose={() => setViewMode('feed')}
+          />
+        )}
         {/* ==================== VIEW MODE 4: CREATOR PROFILE PAGE ==================== */}
         {viewMode === 'profile' && (() => {
           const isOwner = !viewingProfileUser || viewingProfileUser.id === user?.id;
@@ -1495,7 +1605,13 @@ export default function MainDashboardClient() {
 
           {/* Plus button opens 4 post creator choices */}
           <button 
-            onClick={() => setShowCreateChoiceModal(true)} 
+            onClick={() => {
+              if (!user) {
+                router.push('/login');
+              } else {
+                setShowCreateChoiceModal(true);
+              }
+            }} 
             className="hover:opacity-70 transition-opacity opacity-70 hover:opacity-100 text-indigo-400"
             title="Create Post"
           >
@@ -1509,6 +1625,15 @@ export default function MainDashboardClient() {
             title="Reels"
           >
             <PlaySquare className="w-7 h-7" />
+          </button>
+
+          {/* Live Broadcast button */}
+          <button 
+            onClick={() => setViewMode('live')} 
+            className={`hover:opacity-70 transition-opacity ${viewMode === 'live' ? 'opacity-100 text-red-500 animate-pulse' : 'opacity-50'}`}
+            title="Live Streams"
+          >
+            <Radio className="w-7 h-7" />
           </button>
           
           {/* Profile button */}
@@ -1834,6 +1959,18 @@ export default function MainDashboardClient() {
                 <DollarSign className="w-4 h-4" />
                 <span>Monetization</span>
               </button>
+
+              <button
+                onClick={() => setDashboardTab('recommendations')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shrink-0 transition-all ${
+                  dashboardTab === 'recommendations'
+                    ? 'bg-indigo-600 text-white shadow-md'
+                    : 'bg-zinc-900/60 text-zinc-400 hover:text-white border border-zinc-800'
+                }`}
+              >
+                <Sparkles className="w-4 h-4 text-indigo-400" />
+                <span>Viral System</span>
+              </button>
             </div>
 
             {/* Main Content Area */}
@@ -1914,6 +2051,34 @@ export default function MainDashboardClient() {
                       <div>
                         <div className="text-[9px] text-zinc-500 font-bold uppercase">Paid Out</div>
                         <div className="text-xs font-bold text-zinc-200">$0.00</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Real-time Streaming Metrics */}
+                <div className="p-5 rounded-2xl bg-zinc-900 border border-red-500/10 space-y-3.5 shadow-lg relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/5 rounded-full blur-2xl pointer-events-none" />
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-red-400 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                      <span>Live Broadcast Activity (Real-time)</span>
+                    </h4>
+                    <span className="text-[10px] text-zinc-500 font-bold">Supabase Realtime Sync Active</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800 space-y-1">
+                      <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Active Live Rooms</div>
+                      <div className="text-xl font-black text-white flex items-baseline gap-1.5">
+                        <span>{activeLiveStreamsCount}</span>
+                        <span className="text-[9px] text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded">ONLINE</span>
+                      </div>
+                    </div>
+                    <div className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800 space-y-1">
+                      <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Current Live Viewers</div>
+                      <div className="text-xl font-black text-white flex items-baseline gap-1.5">
+                        <span>{totalLiveViewersCount}</span>
+                        <span className="text-[9px] text-indigo-400 font-bold bg-indigo-500/10 px-1.5 py-0.5 rounded">STREAMING</span>
                       </div>
                     </div>
                   </div>

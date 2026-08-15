@@ -3,11 +3,13 @@ import React, { useRef, useEffect, useState } from 'react';
 import Image from 'next/image';
 import { supabase } from '../../lib/supabase';
 import { trackView } from '../../lib/analytics';
+import { trackEngagementEvent } from '../../lib/recommendations';
 import { 
   VolumeX, Volume2, Music, Heart, MessageCircle, Share2, Bookmark, Eye, 
   Play, Pause, RotateCcw, RotateCw, Settings, MoreVertical, Download, 
   Edit3, Trash2, Repeat, FileText, Globe, Sliders, HelpCircle, Star, 
-  Sparkles, Smile, Image as ImageIcon, AtSign, Check, X, ChevronDown, ChevronUp, Clock
+  Sparkles, Smile, Image as ImageIcon, AtSign, Check, X, ChevronDown, ChevronUp, Clock,
+  UserX, Shield
 } from 'lucide-react';
 
 export function ReelCardItem({
@@ -33,6 +35,12 @@ export function ReelCardItem({
 }: any) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+
+  // Recommendation tracking refs
+  const hasRecordedImpression = useRef(false);
+  const hasRecordedStart = useRef(false);
+  const hasRecordedCompletion = useRef(false);
+  const previousTimeRef = useRef(0);
 
   // Player controls state
   const [isPlaying, setIsPlaying] = useState(false);
@@ -117,12 +125,41 @@ export function ReelCardItem({
         entries.forEach((entry) => {
           if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
             setActiveReelId(reelItem.id);
+            
+            // Record real database impression
+            if (!hasRecordedImpression.current) {
+              hasRecordedImpression.current = true;
+              trackEngagementEvent(supabase, {
+                user_id: user?.id,
+                post_id: reelItem.id,
+                event_type: 'impression'
+              });
+            }
+
             // Record view in live Supabase if user is logged in
             if (user) {
               supabase.from('post_views').upsert({
                 post_id: reelItem.id,
                 user_id: user.id
               }, { onConflict: 'post_id,user_id' }).then(() => {});
+            }
+          } else if (!entry.isIntersecting && hasRecordedImpression.current) {
+            // Video exited viewport
+            trackEngagementEvent(supabase, {
+              user_id: user?.id,
+              post_id: reelItem.id,
+              event_type: 'video_exit',
+              watch_duration: watchTime
+            });
+
+            // If user swiped away within 4 seconds, mark as skip
+            if (watchTime < 4) {
+              trackEngagementEvent(supabase, {
+                user_id: user?.id,
+                post_id: reelItem.id,
+                event_type: 'skip',
+                watch_duration: watchTime
+              });
             }
           }
         });
@@ -132,7 +169,7 @@ export function ReelCardItem({
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, [reelItem.id, setActiveReelId, user]);
+  }, [reelItem.id, setActiveReelId, user, watchTime]);
 
   // Video play/pause effect
   useEffect(() => {
@@ -154,12 +191,34 @@ export function ReelCardItem({
   useEffect(() => {
     let timer: any;
     if (isActive && isPlaying) {
+      // Record real database video_start once when playing begins
+      if (!hasRecordedStart.current) {
+        hasRecordedStart.current = true;
+        trackEngagementEvent(supabase, {
+          user_id: user?.id,
+          post_id: reelItem.id,
+          event_type: 'video_start'
+        });
+      }
       timer = setInterval(() => {
-        setWatchTime(prev => prev + 1);
+        setWatchTime(prev => {
+          const nextVal = prev + 1;
+          // Periodically log real database watch_time updates every 5 seconds
+          if (nextVal % 5 === 0) {
+            trackEngagementEvent(supabase, {
+              user_id: user?.id,
+              post_id: reelItem.id,
+              event_type: 'watch_time',
+              watch_duration: nextVal,
+              percentage_watched: Math.round((videoRef.current?.currentTime || 0) / (videoRef.current?.duration || 1) * 100)
+            });
+          }
+          return nextVal;
+        });
       }, 1000);
     }
     return () => clearInterval(timer);
-  }, [isActive, isPlaying]);
+  }, [isActive, isPlaying, user, reelItem.id]);
 
   const togglePlayPause = () => {
     const vid = videoRef.current;
@@ -193,11 +252,61 @@ export function ReelCardItem({
     setProgress(val);
   };
 
+  const onLikeClick = () => {
+    handleLike(reelItem.id, reelItem.isLiked);
+    trackEngagementEvent(supabase, {
+      user_id: user?.id,
+      post_id: reelItem.id,
+      event_type: reelItem.isLiked ? 'unlike' : 'like'
+    });
+  };
+
+  const onShareClick = () => {
+    handleShare(reelItem.id);
+    trackEngagementEvent(supabase, {
+      user_id: user?.id,
+      post_id: reelItem.id,
+      event_type: 'share'
+    });
+  };
+
+  const onBookmarkClick = () => {
+    handleBookmark(reelItem.id, reelItem.isBookmarked);
+    trackEngagementEvent(supabase, {
+      user_id: user?.id,
+      post_id: reelItem.id,
+      event_type: 'save'
+    });
+  };
+
+  const onFollowClick = () => {
+    toggleFollow(reelItem.user_id || reelItem.author);
+    trackEngagementEvent(supabase, {
+      user_id: user?.id,
+      post_id: reelItem.id,
+      event_type: 'follow_after_view'
+    });
+  };
+
+  const onProfileClick = () => {
+    openUserProfile(reelItem.user_id);
+    trackEngagementEvent(supabase, {
+      user_id: user?.id,
+      post_id: reelItem.id,
+      event_type: 'profile_visit_after_view'
+    });
+  };
+
   const handleDoubleTap = (e: React.MouseEvent) => {
     const now = Date.now();
     if (now - lastTap < 300) {
       if (!reelItem.isLiked) {
         handleLike(reelItem.id, reelItem.isLiked);
+        trackEngagementEvent(supabase, {
+          user_id: user?.id,
+          post_id: reelItem.id,
+          event_type: 'like'
+        });
       }
       setShowHeartPop(true);
       setTimeout(() => setShowHeartPop(false), 1000);
@@ -224,6 +333,11 @@ export function ReelCardItem({
       setComments([data, ...comments]);
       setCommentInput('');
       triggerToast("Comment posted successfully!");
+      trackEngagementEvent(supabase, {
+        user_id: user?.id,
+        post_id: reelItem.id,
+        event_type: 'comment'
+      });
     } else {
       triggerToast("Error posting comment.");
     }
@@ -307,6 +421,28 @@ export function ReelCardItem({
             const pct = (vid.currentTime / vid.duration) * 100;
             setProgress(pct);
             setCompletionRate(Math.round(pct));
+
+            // Record completion when percentage watched is >= 95%
+            if (pct >= 95 && !hasRecordedCompletion.current) {
+              hasRecordedCompletion.current = true;
+              trackEngagementEvent(supabase, {
+                user_id: user?.id,
+                post_id: reelItem.id,
+                event_type: 'video_completion',
+                watch_duration: vid.currentTime,
+                percentage_watched: Math.round(pct)
+              });
+            }
+
+            // Detect replays: if current time jumps backwards significantly from previous check
+            if (vid.currentTime < previousTimeRef.current - 2 && previousTimeRef.current > vid.duration - 4) {
+              trackEngagementEvent(supabase, {
+                user_id: user?.id,
+                post_id: reelItem.id,
+                event_type: 'replay'
+              });
+            }
+            previousTimeRef.current = vid.currentTime;
           }
         }}
         onClick={togglePlayPause}
@@ -408,14 +544,14 @@ export function ReelCardItem({
       <div className="relative z-20 space-y-2.5 max-w-[78%] pointer-events-auto">
         <div className="flex items-center gap-3">
           <div 
-            onClick={() => openUserProfile(reelItem.user_id)} 
+            onClick={onProfileClick} 
             className="w-10 h-10 rounded-full overflow-hidden border-2 border-indigo-500 shadow cursor-pointer hover:opacity-80 flex-shrink-0"
           >
             <Image width={100} height={100} referrerPolicy="no-referrer" src={reelItem.avatar || "https://picsum.photos/seed/user/100/100"} alt="Reel Author" className="w-full h-full object-cover" />
           </div>
           <div>
             <div 
-              onClick={() => openUserProfile(reelItem.user_id)} 
+              onClick={onProfileClick} 
               className="font-bold text-sm tracking-tight drop-shadow cursor-pointer hover:underline flex items-center gap-1.5"
             >
               <span>@{reelItem.author || 'creator'}</span>
@@ -424,7 +560,7 @@ export function ReelCardItem({
           </div>
           {reelItem.user_id !== user?.id && (
             <button 
-              onClick={() => toggleFollow(reelItem.user_id || reelItem.author)}
+              onClick={onFollowClick}
               className={`px-3 py-1 rounded-full text-xs font-bold transition-all shadow ${
                 isFollowing 
                   ? 'bg-zinc-800 text-zinc-300 border border-zinc-700' 
@@ -490,7 +626,7 @@ export function ReelCardItem({
 
         {/* Like */}
         <button 
-          onClick={() => handleLike(reelItem.id, reelItem.isLiked)}
+          onClick={onLikeClick}
           className="flex flex-col items-center group"
         >
           <div className="p-3 rounded-full bg-black/50 backdrop-blur-md border border-white/10 group-hover:bg-black/80 transition-colors">
@@ -516,7 +652,7 @@ export function ReelCardItem({
 
         {/* Share */}
         <button 
-          onClick={() => handleShare(reelItem.id)}
+          onClick={onShareClick}
           className="flex flex-col items-center group"
         >
           <div className="p-3 rounded-full bg-black/50 backdrop-blur-md border border-white/10 group-hover:bg-black/80 transition-colors">
@@ -529,7 +665,7 @@ export function ReelCardItem({
 
         {/* Save */}
         <button 
-          onClick={() => handleBookmark(reelItem.id, reelItem.isBookmarked)}
+          onClick={onBookmarkClick}
           className="flex flex-col items-center group"
         >
           <div className="p-3 rounded-full bg-black/50 backdrop-blur-md border border-white/10 group-hover:bg-black/80 transition-colors">
@@ -706,6 +842,43 @@ export function ReelCardItem({
                 <span>Rate playback experience</span>
               </button>
 
+              {!isOwner && (
+                <>
+                  <div className="border-t border-zinc-800 my-1 pt-1" />
+                  <button 
+                    onClick={() => {
+                      setShowMoreMenu(false);
+                      trackEngagementEvent(supabase, {
+                        user_id: user?.id,
+                        post_id: reelItem.id,
+                        event_type: 'hide'
+                      });
+                      triggerToast("Marked as 'Not Interested'.");
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-orange-400 transition-colors"
+                  >
+                    <UserX className="w-4 h-4" />
+                    <span>Not Interested</span>
+                  </button>
+
+                  <button 
+                    onClick={() => {
+                      setShowMoreMenu(false);
+                      trackEngagementEvent(supabase, {
+                        user_id: user?.id,
+                        post_id: reelItem.id,
+                        event_type: 'report'
+                      });
+                      triggerToast("Reel reported successfully.");
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-red-500/10 text-xs font-semibold text-red-400 transition-colors"
+                  >
+                    <Shield className="w-4 h-4 text-red-500" />
+                    <span>Report Reel</span>
+                  </button>
+                </>
+              )}
+
               {isOwner && (
                 <>
                   <div className="border-t border-zinc-800 my-1 pt-1" />
@@ -804,10 +977,14 @@ export function ReelCardItem({
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="space-y-2 text-xs text-zinc-300 bg-zinc-900/60 p-3 rounded-xl border border-zinc-800 leading-relaxed">
-              <p>• You follow creators with similar interests or interact with similar Reels categories.</p>
-              <p>• High engagement rate and completion rate among R.mix community members.</p>
-              <p>• Trending in your country&apos;s active recommendations feed.</p>
+            <div className="space-y-2.5 text-xs text-zinc-300 bg-zinc-900/60 p-3.5 rounded-xl border border-zinc-800 leading-relaxed">
+              <div className="flex items-center justify-between font-semibold border-b border-zinc-800 pb-2 mb-2 text-white">
+                <span>Content Category:</span>
+                <span className="text-indigo-400">{reelItem.category || 'General'}</span>
+              </div>
+              <p>• **Algorithm Score:** Calculated at <span className="text-emerald-400 font-bold">{reelItem.recommendation_score || '0.75'} pts</span> using engagement metrics, velocity, and age-gravity.</p>
+              <p>• **Audience Stage:** This video has reached <span className="text-purple-400 font-bold">Stage {reelItem.metrics?.audienceStage || 1}</span> of our multi-stage distribution checks.</p>
+              <p>• **Personalization:** Matches your affinity score towards **{reelItem.category || 'General'}** topics.</p>
             </div>
             <button onClick={() => setShowWhyThisModal(false)} className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-bold text-xs text-white">
               Got It
