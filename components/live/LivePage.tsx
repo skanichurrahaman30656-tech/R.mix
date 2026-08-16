@@ -40,6 +40,9 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose }: LiveP
 
   // WebRTC / Signaling state
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'fallback'>('connecting');
+  const [mediaError, setMediaError] = useState<string | null>(null);
+  const [webrtcError, setWebrtcError] = useState<string | null>(null);
+  const [hostingStep, setHostingStep] = useState<'config' | 'preview'>('config');
   
   // Refs
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -48,6 +51,21 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose }: LiveP
   const channelRef = useRef<any>(null);
   const peerConnectionsRef = useRef<{ [userId: string]: RTCPeerConnection }>({});
   const singlePeerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const userTokenRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then((res: any) => {
+      userTokenRef.current = res.data.session?.access_token || null;
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
+      userTokenRef.current = session?.access_token || null;
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [supabase]);
 
   // -----------------------------------------------------------------
   // 1. LOBBY DATA FETCHING
@@ -67,7 +85,7 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose }: LiveP
             full_name
           )
         `)
-        .eq('status', 'active')
+        .eq('status', 'live')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -104,73 +122,177 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose }: LiveP
     }
   }, [comments]);
 
+  // Handle unload/pagehide tab closure state cleanup
+  useEffect(() => {
+    const handleUnloadCleanup = () => {
+      if (isHost && activeSession) {
+        const supabaseUrl = (supabase as any).supabaseUrl || process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const supabaseKey = (supabase as any).supabaseKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+        if (supabaseUrl && supabaseKey) {
+          const headers = new Headers();
+          headers.append("apikey", supabaseKey);
+          headers.append("Authorization", `Bearer ${userTokenRef.current || ""}`);
+          headers.append("Content-Type", "application/json");
+          
+          fetch(`${supabaseUrl}/rest/v1/live_sessions?id=eq.${activeSession.id}`, {
+            method: 'PATCH',
+            headers,
+            body: JSON.stringify({ status: 'ended', ended_at: new Date().toISOString() }),
+            keepalive: true
+          });
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleUnloadCleanup);
+    window.addEventListener('pagehide', handleUnloadCleanup);
+    return () => {
+      window.removeEventListener('beforeunload', handleUnloadCleanup);
+      window.removeEventListener('pagehide', handleUnloadCleanup);
+    };
+  }, [isHost, activeSession, supabase]);
+
   // -----------------------------------------------------------------
   // 2. HOSTING CONTROL FLOWS
   // -----------------------------------------------------------------
-  const handleStartLive = async (e: React.FormEvent) => {
+  const handleInitiatePreview = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
     if (!liveTitle.trim()) return;
+    setMediaError(null);
+
+    // D. Detect insecure context & iframe restrictions before trying
+    const isSecure = typeof window !== 'undefined' && window.isSecureContext;
+    const hasMediaDevices = typeof navigator !== 'undefined' && !!navigator.mediaDevices;
+    const hasGetUserMedia = hasMediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function';
+    const inIframe = typeof window !== 'undefined' && window.self !== window.top;
+
+    if (!isSecure) {
+      setMediaError("Camera/microphone access requires a secure HTTPS context. Please open the deployed HTTPS R.mix site in a normal browser tab to start a live broadcast.");
+      return;
+    }
+
+    if (!hasMediaDevices || !hasGetUserMedia) {
+      setMediaError("Camera/microphone access is restricted in Preview. Open the deployed HTTPS R.mix site in a normal browser tab to start a live broadcast.");
+      return;
+    }
 
     try {
-      // 1. Request camera / microphone media permission
+      // A. CAMERA + MICROPHONE browser media initialization
       let mediaStream: MediaStream;
       try {
         mediaStream = await navigator.mediaDevices.getUserMedia({
           video: { width: 640, height: 480, frameRate: 24 },
           audio: true
         });
-        setLocalStream(mediaStream);
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = mediaStream;
+      } catch (err: any) {
+        let msg = "Unable to access camera or microphone.";
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          msg = "Camera/microphone permission denied. Please grant permission in your browser.";
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          msg = "Camera or microphone not found. Please connect a device.";
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          msg = "Camera/microphone is already in use by another application.";
+        } else if (err.name === 'SecurityError' || inIframe) {
+          msg = "Camera/microphone access is restricted in Preview. Open the deployed HTTPS R.mix site in a normal browser tab to start a live broadcast.";
+        } else {
+          msg = `Camera/microphone unavailable: ${err.message || err.name || 'Unknown error'}`;
         }
-      } catch (err) {
-        alert("Camera and microphone access are required to go live. Please grant browser permissions.");
-        console.error("Media permission error:", err);
+        setMediaError(msg);
         return;
       }
 
-      // 2. Insert live session row to Supabase
+      setLocalStream(mediaStream);
+      setHostingStep('preview');
+    } catch (err: any) {
+      console.error("Failed to acquire preview stream:", err);
+      setMediaError(`Media acquisition failed: ${err.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleLaunchBroadcast = async () => {
+    if (!user || !localStream) return;
+    setMediaError(null);
+
+    try {
+      // B. REAL LIVE SESSION CREATION (only after media access succeeded!)
       const { data: sessionData, error: sessionErr } = await supabase
         .from('live_sessions')
         .insert({
           host_id: user.id,
           title: liveTitle.trim(),
           description: liveDesc.trim(),
-          status: 'active',
+          status: 'live',
+          started_at: new Date().toISOString(),
           viewer_count: 0
         })
         .select()
         .single();
 
-      if (sessionErr) throw sessionErr;
+      if (sessionErr) {
+        throw sessionErr;
+      }
 
-      // 3. Update states
+      // Only switch UI states after successful database creation
       setIsHost(true);
       setActiveSession(sessionData);
       setViewerCount(0);
       setComments([]);
       setShowGoLiveForm(false);
+      setHostingStep('config'); // Reset step for next time
 
-      // 4. Setup Host Realtime Broadcast + Presence Channel
-      setupRealtimeChannel(sessionData.id, true, mediaStream);
-    } catch (err) {
-      console.error("Failed to start live stream:", err);
-      alert("Error starting live stream. Please try again.");
+      // Bind the existing active stream to local video element
+      setTimeout(() => {
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = localStream;
+        }
+      }, 100);
+
+      // C. Setup host realtime channels and start WebRTC/signaling
+      setupRealtimeChannel(sessionData.id, true, localStream);
+    } catch (err: any) {
+      console.error("Failed to start live stream database session:", err);
+      setMediaError(`Unable to create live session: ${err.message || 'Database insert failed'}`);
     }
+  };
+
+  const handleCancelPreview = () => {
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop());
+      setLocalStream(null);
+    }
+    setHostingStep('config');
   };
 
   const handleEndLive = async () => {
     if (!activeSession) return;
     
-    // Stop local video tracks
+    // Stop all media tracks immediately
     if (localStream) {
-      localStream.getTracks().forEach(track => track.stop());
+      localStream.getTracks().forEach(track => {
+        track.stop();
+        console.log(`[Media Cleanup] Stopped track: ${track.kind}`);
+      });
       setLocalStream(null);
     }
 
+    // Broadcast "broadcast-ended" signal to all viewers first
+    if (channelRef.current) {
+      try {
+        await channelRef.current.send({
+          type: 'broadcast',
+          event: 'webrtc-signal',
+          payload: {
+            type: 'broadcast-ended'
+          }
+        });
+      } catch (err) {
+        console.warn("Failed to send broadcast-ended event:", err);
+      }
+    }
+
     try {
-      // Update DB state
+      // G. Update database state
       await supabase
         .from('live_sessions')
         .update({ status: 'ended', ended_at: new Date().toISOString() })
@@ -183,7 +305,7 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose }: LiveP
       console.error("Error ending live session:", err);
     }
 
-    // Leave channel
+    // Leave and delete channel subscription
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
@@ -193,6 +315,8 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose }: LiveP
     setActiveSession(null);
     setLiveTitle('');
     setLiveDesc('');
+    setMediaError(null);
+    setWebrtcError(null);
   };
 
   // -----------------------------------------------------------------
@@ -252,7 +376,7 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose }: LiveP
   // 4. SUPABASE REALTIME (CHAT + PRESENCE + WEBRTC SIGNALING)
   // -----------------------------------------------------------------
   const setupRealtimeChannel = (sessionId: string, hostMode: boolean, stream: MediaStream | null) => {
-    const channelName = `live-room-${sessionId}`;
+    const channelName = `live-session-${sessionId}`;
     const channel = supabase.channel(channelName, {
       config: {
         presence: {
@@ -287,11 +411,19 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose }: LiveP
 
     // Listen to WebRTC Broadcast Signals
     channel.on('broadcast', { event: 'webrtc-signal' }, async ({ payload }: any) => {
+      const { from, to, type, sdp, candidate } = payload;
+
+      if (type === 'broadcast-ended') {
+        if (!hostMode) {
+          alert("The host has ended this live broadcast.");
+          handleLeaveLive();
+        }
+        return;
+      }
+
       if (hostMode) {
         // HOST RECEIVES SIGNAL
-        const { from, type, sdp, candidate } = payload;
-        
-        if (type === 'join-request') {
+        if (type === 'viewer-join') {
           // Initialize P2P RTCPeerConnection for this specific viewer
           if (stream) {
             createHostPeerConnection(from, stream, channel);
@@ -309,7 +441,6 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose }: LiveP
         }
       } else {
         // VIEWER RECEIVES SIGNAL
-        const { to, type, sdp, candidate } = payload;
         if (to !== user?.id) return; // Ignore signals intended for other viewers
 
         if (type === 'offer') {
@@ -368,7 +499,7 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose }: LiveP
             event: 'webrtc-signal',
             payload: {
               from: user?.id,
-              type: 'join-request'
+              type: 'viewer-join'
             }
           });
 
@@ -397,6 +528,20 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose }: LiveP
     });
 
     peerConnectionsRef.current[viewerId] = pc;
+
+    // Add connection-state handling
+    pc.onconnectionstatechange = () => {
+      console.log(`[Host WebRTC] Peer connection state for ${viewerId}:`, pc.connectionState);
+      if (pc.connectionState === 'failed') {
+        setWebrtcError("WebRTC connection failed. Switched to secure fallback presence channel.");
+      }
+    };
+    pc.oniceconnectionstatechange = () => {
+      console.log(`[Host WebRTC] ICE state for ${viewerId}:`, pc.iceConnectionState);
+    };
+    pc.onicegatheringstatechange = () => {
+      console.log(`[Host WebRTC] ICE gathering for ${viewerId}:`, pc.iceGatheringState);
+    };
 
     // Add local media stream tracks
     stream.getTracks().forEach(track => {
@@ -463,16 +608,28 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose }: LiveP
       if (remoteVideoRef.current && e.streams[0]) {
         remoteVideoRef.current.srcObject = e.streams[0];
         setConnectionStatus('connected');
+        setWebrtcError(null);
       }
     };
 
     // Listen to connection state
     pc.onconnectionstatechange = () => {
+      console.log(`[Viewer WebRTC] Connection state:`, pc.connectionState);
       if (pc.connectionState === 'connected') {
         setConnectionStatus('connected');
-      } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        setWebrtcError(null);
+      } else if (pc.connectionState === 'connecting') {
+        setConnectionStatus('connecting');
+      } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed' || pc.connectionState === 'disconnected') {
         setConnectionStatus('fallback');
+        setWebrtcError("WebRTC direct peer connection failed or closed. Switched to secured realtime metadata and chat room.");
       }
+    };
+    pc.oniceconnectionstatechange = () => {
+      console.log(`[Viewer WebRTC] ICE state:`, pc.iceConnectionState);
+    };
+    pc.onicegatheringstatechange = () => {
+      console.log(`[Viewer WebRTC] ICE gathering:`, pc.iceGatheringState);
     };
 
     await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: offerSdp }));
@@ -690,60 +847,142 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose }: LiveP
 
   // --- RENDERING GO LIVE INITIALIZATION FORM ---
   if (showGoLiveForm) {
+    const inIframe = typeof window !== 'undefined' && window.self !== window.top;
+
     return (
       <div className={`px-4 pb-24 max-w-md mx-auto space-y-5 ${isDarkMode ? 'text-white' : 'text-zinc-900'}`}>
         <div className="flex items-center justify-between pb-3 border-b border-zinc-800/60">
           <div className="flex items-center gap-2">
-            <Radio className="w-5 h-5 text-red-500" />
-            <h1 className="text-lg font-black tracking-tight">Configure Live Stream</h1>
+            <Radio className="w-5 h-5 text-red-500 animate-pulse" />
+            <h1 className="text-lg font-black tracking-tight">
+              {hostingStep === 'preview' ? 'Verify Device Preview' : 'Configure Live Stream'}
+            </h1>
           </div>
           <button 
-            onClick={() => setShowGoLiveForm(false)}
+            onClick={() => {
+              handleCancelPreview();
+              setShowGoLiveForm(false);
+            }}
             className="p-1 rounded-full hover:bg-zinc-800/50 text-zinc-400"
           >
             <X className="w-6 h-6" />
           </button>
         </div>
 
-        <form onSubmit={handleStartLive} className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-zinc-400 uppercase tracking-wide">Stream Title *</label>
-            <input 
-              type="text" 
-              required
-              placeholder="e.g. Mixing live techno beats! 🎧"
-              value={liveTitle}
-              onChange={(e) => setLiveTitle(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl border bg-zinc-950 border-zinc-800 focus:outline-none focus:border-indigo-500 text-sm font-semibold text-white placeholder-zinc-600"
-            />
+        {mediaError && (
+          <div className="p-3.5 rounded-xl border border-red-500/30 bg-red-500/10 text-xs text-red-400 font-bold flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4.5 h-4.5 text-red-400 shrink-0" />
+              <span>{mediaError}</span>
+            </div>
+            {inIframe && (
+              <button
+                type="button"
+                onClick={() => window.open('/live', '_blank')}
+                className="mt-1 px-3 py-1.5 self-start bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-black tracking-tight uppercase rounded-lg transition-colors flex items-center gap-1"
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>Open Live in New Tab</span>
+              </button>
+            )}
           </div>
+        )}
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-zinc-400 uppercase tracking-wide">Stream Description (Optional)</label>
-            <textarea 
-              rows={3}
-              placeholder="Let your fans know what they can expect from this live feed..."
-              value={liveDesc}
-              onChange={(e) => setLiveDesc(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl border bg-zinc-950 border-zinc-800 focus:outline-none focus:border-indigo-500 text-sm font-semibold text-white placeholder-zinc-600 resize-none"
-            />
+        {hostingStep === 'config' ? (
+          <form onSubmit={handleInitiatePreview} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-zinc-400 uppercase tracking-wide">Stream Title *</label>
+              <input 
+                type="text" 
+                required
+                placeholder="e.g. Mixing live techno beats! 🎧"
+                value={liveTitle}
+                onChange={(e) => setLiveTitle(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border bg-zinc-950 border-zinc-800 focus:outline-none focus:border-indigo-500 text-sm font-semibold text-white placeholder-zinc-600"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-zinc-400 uppercase tracking-wide">Stream Description (Optional)</label>
+              <textarea 
+                rows={3}
+                placeholder="Let your fans know what they can expect from this live feed..."
+                value={liveDesc}
+                onChange={(e) => setLiveDesc(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border bg-zinc-950 border-zinc-800 focus:outline-none focus:border-indigo-500 text-sm font-semibold text-white placeholder-zinc-600 resize-none"
+              />
+            </div>
+
+            <div className="p-3.5 rounded-xl border border-zinc-800 bg-zinc-900/30 text-xs text-zinc-400 leading-relaxed flex items-start gap-2.5">
+              <AlertCircle className="w-5 h-5 text-indigo-400 shrink-0" />
+              <span>
+                By proceeding, you grant browser camera and microphone permissions to preview your device before broadcasting.
+              </span>
+            </div>
+
+            {inIframe && (
+              <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-400 font-medium space-y-2">
+                <p>Running inside a restricted Preview frame? Direct camera capture is highly optimized when opened in a dedicated browser tab.</p>
+                <button
+                  type="button"
+                  onClick={() => window.open('/live', '_blank')}
+                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-black tracking-tight uppercase rounded-lg text-[10px] transition-colors flex items-center justify-center gap-1"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Open Live in New Tab</span>
+                </button>
+              </div>
+            )}
+
+            <button 
+              type="submit"
+              className="w-full py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-extrabold text-sm shadow-lg shadow-red-900/10 transition-all flex items-center justify-center gap-1.5 active:scale-98"
+            >
+              <Video className="w-4.5 h-4.5" />
+              <span>Preview Device & Set up Stream</span>
+            </button>
+          </form>
+        ) : (
+          <div className="space-y-4">
+            <div className="relative aspect-video w-full rounded-xl bg-black border border-zinc-800 overflow-hidden shadow-2xl flex items-center justify-center">
+              <video
+                ref={(el) => {
+                  if (el && localStream) el.srcObject = localStream;
+                }}
+                autoPlay
+                muted
+                playsInline
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute top-3 left-3 px-2 py-1 bg-black/75 border border-zinc-700 rounded text-[10px] font-bold text-zinc-300 flex items-center gap-1 backdrop-blur-sm">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                <span>Camera Preview Active</span>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl border border-zinc-800 bg-zinc-950/60 space-y-1.5">
+              <span className="text-[10px] font-black text-zinc-500 uppercase tracking-wider">Stream Meta Details</span>
+              <h2 className="text-sm font-black text-white">{liveTitle}</h2>
+              {liveDesc.trim() && <p className="text-xs text-zinc-400 leading-normal">{liveDesc}</p>}
+            </div>
+
+            <div className="flex gap-3">
+              <button 
+                onClick={handleCancelPreview}
+                className="flex-1 py-3 rounded-xl border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-extrabold text-xs transition-all active:scale-98 text-center uppercase tracking-wider"
+              >
+                Back & Edit
+              </button>
+              <button 
+                onClick={handleLaunchBroadcast}
+                className="flex-[2] py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-extrabold text-xs shadow-lg shadow-red-900/10 transition-all flex items-center justify-center gap-1.5 active:scale-98 uppercase tracking-wider"
+              >
+                <Video className="w-4 h-4" />
+                <span>Go Live Broadcast</span>
+              </button>
+            </div>
           </div>
-
-          <div className="p-3.5 rounded-xl border border-zinc-800 bg-zinc-900/30 text-xs text-zinc-400 leading-relaxed flex items-start gap-2.5">
-            <AlertCircle className="w-5 h-5 text-indigo-400 shrink-0" />
-            <span>
-              By proceeding, you grant browser camera and microphone permissions. Your browser stream will connect securely using peer-to-peer WebRTC technology.
-            </span>
-          </div>
-
-          <button 
-            type="submit"
-            className="w-full py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-extrabold text-sm shadow-lg shadow-red-900/10 transition-all flex items-center justify-center gap-1.5 active:scale-98"
-          >
-            <Video className="w-4.5 h-4.5" />
-            <span>Go Live Broadcast</span>
-          </button>
-        </form>
+        )}
       </div>
     );
   }
@@ -754,6 +993,13 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose }: LiveP
       
       {/* 1. MAIN BROADCAST VIDEO / FALLBACK DISPLAY PANEL */}
       <div className="flex-1 relative bg-black flex items-center justify-center min-h-[40vh] md:min-h-0">
+        
+        {webrtcError && (
+          <div className="absolute top-20 left-4 right-4 z-20 p-2.5 rounded-xl bg-amber-600/10 border border-amber-500/20 text-[11px] font-bold text-amber-400 flex items-center gap-2 backdrop-blur-md">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{webrtcError}</span>
+          </div>
+        )}
         
         {isHost ? (
           // HOST: Renders local camera feed

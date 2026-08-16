@@ -736,11 +736,6 @@ export default function MainDashboardClient() {
         return;
       }
       
-      if (file.size > 100 * 1024 * 1024) {
-        alert("File exceeds the 100MB limit.");
-        return;
-      }
-
       if (isImage) {
         finalFile = await compressImage(file, 1080);
       } else if (isVideo) {

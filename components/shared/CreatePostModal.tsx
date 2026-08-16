@@ -4,6 +4,7 @@ import { useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { X, Image as ImageIcon, Video, Loader2, MapPin, Tag, Globe, Lock, Users, ShieldAlert, CheckCircle2, FileText, AlertCircle } from "lucide-react";
 import { compressImage } from "@/lib/compress";
+import * as tus from "tus-js-client";
 
 interface CreatePostModalProps {
   isOpen: boolean;
@@ -52,11 +53,18 @@ export default function CreatePostModal({
   const [statusMessage, setStatusMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   
+  // Resumable Upload Stats
+  const [uploadSpeed, setUploadSpeed] = useState<string | null>(null);
+  const [remainingTime, setRemainingTime] = useState<string | null>(null);
+  const [isPaused, setIsPaused] = useState(false);
+  const tusUploadRef = useRef<tus.Upload | null>(null);
+  
   // Copyright Warning State
   const [copyrightWarning, setCopyrightWarning] = useState<string | null>(null);
   const [copyrightConfirmed, setCopyrightConfirmed] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortControllerRef = useRef<XMLHttpRequest | null>(null);
 
   if (!isOpen) return null;
 
@@ -77,11 +85,6 @@ export default function CreatePostModal({
         setError(`Unsupported file type: "${file.name}". Allowed types: JPG, PNG, WEBP, MP4, MOV, WEBM.`);
         continue;
       }
-      if (file.size > 100 * 1024 * 1024) {
-        setError(`File "${file.name}" exceeds the 100MB limit.`);
-        continue;
-      }
-
       // Quick copyright scan check on filename/metadata
       const lowerName = file.name.toLowerCase();
       const matchedKeyword = COPYRIGHT_KEYWORDS.find(kw => lowerName.includes(kw));
@@ -117,42 +120,194 @@ export default function CreatePostModal({
     setPreviews((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const uploadFile = async (file: File): Promise<string> => {
-    try {
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+  const uploadFile = async (
+    file: File, 
+    onProgress: (pct: number, loadedBytes: number, totalBytes: number) => void
+  ): Promise<string> => {
+    const isVideo = file.type.startsWith("video/");
+    const isLarge = file.size > 5 * 1024 * 1024; // 5MB threshold for Resumable TUS
 
-      const { data, error } = await supabase.storage
-        .from("media")
-        .upload(fileName, file, {
-          upsert: false,
-          cacheControl: "3600",
-        });
+    const supabaseUrl = (supabase as any).supabaseUrl || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://grkqbppgimklpyhrvqob.supabase.co';
+    const supabaseKey = (supabase as any).supabaseKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_gq-z20iCbR83jVFbOiwWzw_k-U8yx9O';
+    
+    // Retrieve current active user session token for authenticated RLS owner mapping
+    const { data: { session } } = await supabase.auth.getSession();
+    const userToken = session?.access_token || supabaseKey;
 
-      if (error) {
-        console.warn('Storage error, falling back to base64', error.message);
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(file);
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = (err) => reject(err);
-        });
-      }
+    const fileExt = file.name.split(".").pop();
+    const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
 
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("media").getPublicUrl(data.path);
-
-      return publicUrl;
-    } catch (err: any) {
-      console.warn('Storage exception, falling back to base64', err.message);
+    if (isVideo && isLarge) {
+      // -------------------------------------------------------------
+      // RESUMABLE TUS UPLOAD ENGINE (For Videos)
+      // -------------------------------------------------------------
       return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = (error) => reject(error);
+        setIsPaused(false);
+        setUploadSpeed(null);
+        setRemainingTime(null);
+
+        const startTime = Date.now();
+
+        const upload = new tus.Upload(file, {
+          endpoint: `${supabaseUrl}/storage/v1/upload/resumable`,
+          retryDelays: [0, 3000, 5000, 10000, 20000],
+          headers: {
+            authorization: `Bearer ${userToken}`,
+            apikey: supabaseKey,
+          },
+          uploadDataDuringCreation: true,
+          metadata: {
+            bucketName: 'media',
+            objectName: fileName,
+            contentType: file.type || 'application/octet-stream',
+          },
+          chunkSize: 6 * 1024 * 1024, // 6MB sequential chunk size
+          onError: (err) => {
+            console.error("TUS error occurred:", err);
+            reject(err);
+          },
+          onProgress: (bytesSent, bytesTotal) => {
+            const elapsedSeconds = (Date.now() - startTime) / 1000;
+            const speedBytesPerSec = elapsedSeconds > 0 ? bytesSent / elapsedSeconds : 0;
+            
+            // Format speed
+            let speedText = "";
+            if (speedBytesPerSec > 1024 * 1024) {
+              speedText = `${(speedBytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
+            } else if (speedBytesPerSec > 1024) {
+              speedText = `${(speedBytesPerSec / 1024).toFixed(0)} KB/s`;
+            } else {
+              speedText = `${speedBytesPerSec.toFixed(0)} B/s`;
+            }
+
+            // Format remaining time
+            let remainingText = "";
+            if (speedBytesPerSec > 0) {
+              const remainingBytes = bytesTotal - bytesSent;
+              const remainingSec = Math.ceil(remainingBytes / speedBytesPerSec);
+              if (remainingSec > 60) {
+                remainingText = `${Math.floor(remainingSec / 60)}m ${remainingSec % 60}s`;
+              } else {
+                remainingText = `${remainingSec}s`;
+              }
+            } else {
+              remainingText = "estimating...";
+            }
+
+            setUploadSpeed(speedText);
+            setRemainingTime(remainingText);
+
+            const pct = Math.round((bytesSent / bytesTotal) * 100);
+            onProgress(pct, bytesSent, bytesTotal);
+          },
+          onSuccess: () => {
+            const { data: { publicUrl } } = supabase.storage.from("media").getPublicUrl(fileName);
+            setUploadSpeed(null);
+            setRemainingTime(null);
+            tusUploadRef.current = null;
+            resolve(publicUrl);
+          }
+        });
+
+        tusUploadRef.current = upload;
+
+        // Check for previous uploads to resume, or start fresh
+        upload.findPreviousUploads().then((previousUploads) => {
+          if (previousUploads.length) {
+            upload.resumeFromPreviousUpload(previousUploads[0]);
+          }
+          upload.start();
+        }).catch((err) => {
+          console.warn("TUS findPreviousUploads failed, starting fresh:", err);
+          upload.start();
+        });
+      });
+    } else {
+      // -------------------------------------------------------------
+      // NATIVE DIRECT UPLOAD ENGINE (For Images & Small Videos)
+      // -------------------------------------------------------------
+      return new Promise((resolve, reject) => {
+        try {
+          const uploadUrl = `${supabaseUrl}/storage/v1/object/media/${fileName}`;
+
+          const xhr = new XMLHttpRequest();
+          abortControllerRef.current = xhr;
+
+          xhr.upload.addEventListener('progress', (e) => {
+            if (e.lengthComputable) {
+              const pct = Math.round((e.loaded / e.total) * 100);
+              onProgress(pct, e.loaded, e.total);
+            }
+          });
+
+          xhr.addEventListener('load', () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              const { data: { publicUrl } } = supabase.storage.from("media").getPublicUrl(fileName);
+              resolve(publicUrl);
+            } else {
+              let errMsg = `Upload failed with status ${xhr.status}`;
+              try {
+                const resJson = JSON.parse(xhr.responseText);
+                if (resJson.message) errMsg = resJson.message;
+              } catch {}
+              reject(new Error(errMsg));
+            }
+          });
+
+          xhr.addEventListener('error', () => {
+            reject(new Error("Network transfer failure occurred. Please check your internet connection."));
+          });
+
+          xhr.addEventListener('abort', () => {
+            const abortError = new Error("Upload cancelled.");
+            abortError.name = 'AbortError';
+            reject(abortError);
+          });
+
+          xhr.open('POST', uploadUrl, true);
+          xhr.setRequestHeader('Authorization', `Bearer ${userToken}`);
+          xhr.setRequestHeader('apikey', supabaseKey);
+          xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+          xhr.send(file);
+        } catch (err) {
+          reject(err);
+        }
       });
     }
+  };
+
+  const handlePauseUpload = () => {
+    if (tusUploadRef.current) {
+      tusUploadRef.current.abort();
+      setIsPaused(true);
+      setStatusMessage("Upload paused by user.");
+    }
+  };
+
+  const handleResumeUpload = () => {
+    if (tusUploadRef.current) {
+      setIsPaused(false);
+      setStatusMessage("Resuming upload...");
+      tusUploadRef.current.start();
+    }
+  };
+
+  const handleCancelUpload = () => {
+    if (tusUploadRef.current) {
+      tusUploadRef.current.abort();
+      tusUploadRef.current = null;
+    }
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setLoading(false);
+    setProgress(0);
+    setUploadSpeed(null);
+    setRemainingTime(null);
+    setIsPaused(false);
+    setStatusMessage("Upload cancelled.");
+    setError("Upload was cancelled by the user.");
   };
 
   const handlePost = async () => {
@@ -163,15 +318,15 @@ export default function CreatePostModal({
 
     setLoading(true);
     setError(null);
-    setProgress(10);
+    setProgress(5);
     setStatusMessage("Scanning media & verifying copyright compliance...");
 
     try {
       // Step 1: Copyright Scan Delay
       await new Promise((resolve) => setTimeout(resolve, 600));
 
-      setProgress(30);
-      setStatusMessage("Uploading media assets...");
+      setProgress(15);
+      setStatusMessage("Starting secure upload...");
 
       const mediaUrls: string[] = [];
       let postType = initialMode === "reel" ? "reel" : "text";
@@ -179,11 +334,14 @@ export default function CreatePostModal({
       if (files.length > 0) {
         for (let i = 0; i < files.length; i++) {
           const currentFile = files[i];
-          const fileProgress = 30 + Math.round(((i + 1) / files.length) * 40);
-          setProgress(fileProgress);
-          setStatusMessage(`Uploading asset ${i + 1} of ${files.length} (${fileProgress}%)...`);
-
-          const url = await uploadFile(currentFile);
+          
+          const url = await uploadFile(currentFile, (pct, loaded, total) => {
+            const totalMb = (total / (1024 * 1024)).toFixed(1);
+            const loadedMb = (loaded / (1024 * 1024)).toFixed(1);
+            setProgress(pct);
+            setStatusMessage(`Uploading "${currentFile.name}" (${loadedMb}MB / ${totalMb}MB) - ${pct}%`);
+          });
+          
           mediaUrls.push(url);
 
           if (currentFile.type.startsWith("video/")) {
@@ -195,7 +353,7 @@ export default function CreatePostModal({
       }
 
       // Step 2: Finalizing post details
-      setProgress(85);
+      setProgress(90);
       setStatusMessage("Processing post metadata & tags...");
 
       // Build full caption with tags & location
@@ -224,17 +382,11 @@ export default function CreatePostModal({
       }).select(`*, profiles:user_id(id, username, full_name, avatar_url)`).single();
 
       if (postError) {
-        console.warn('Insert post failed:', postError.message);
-        // Instead of throwing, simulate success since it's a mock app with RLS issue
-        // The post won't be saved to DB but the user won't get an error, or we use localStorage
-        // wait, if we throw, it says "Cannot create post". Let's throw a more user friendly error,
-        // or just ignore and call onPostCreated.
-        // Actually, we can use local state for the dashboard if it fails, but that's complex.
         throw new Error(postError.message);
       }
 
       setProgress(100);
-      setStatusMessage("Post published successfully!");
+      setStatusMessage("Published successfully!");
 
       setTimeout(() => {
         setCaption("");
@@ -254,7 +406,19 @@ export default function CreatePostModal({
       }, 700);
     } catch (err: any) {
       console.error(err);
-      setError(err.message || "Failed to publish post.");
+      if (err.name === 'AbortError') {
+        setError("Upload cancelled.");
+      } else if (
+        err.message && 
+        (err.message.toLowerCase().includes("exceeded the maximum allowed size") || 
+         err.message.toLowerCase().includes("413") || 
+         err.message.toLowerCase().includes("too large") || 
+         err.message.toLowerCase().includes("payload too large"))
+      ) {
+        setError("Video is larger than the maximum supported size.");
+      } else {
+        setError(err.message || "Failed to publish post.");
+      }
       setLoading(false);
       setProgress(0);
       setStatusMessage("");
@@ -453,19 +617,51 @@ export default function CreatePostModal({
         <div className="p-4 border-t border-zinc-900 bg-zinc-950">
           
           {loading && (
-            <div className="space-y-2 mb-3">
+            <div className="space-y-2.5 mb-3 bg-zinc-900/40 p-3 rounded-xl border border-zinc-800/60">
               <div className="flex justify-between text-xs font-medium text-zinc-400">
-                <span className="flex items-center gap-1.5 text-indigo-400">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  {statusMessage}
+                <span className="flex items-center gap-1.5 text-indigo-400 min-w-0">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                  <span className="truncate">{statusMessage}</span>
                 </span>
-                <span className="font-bold text-indigo-400">{progress}%</span>
+                <span className="font-bold text-indigo-400 shrink-0">{progress}%</span>
               </div>
+              
               <div className="w-full bg-zinc-800 rounded-full h-2 overflow-hidden">
                 <div
                   className="bg-gradient-to-r from-indigo-500 to-purple-500 h-2 rounded-full transition-all duration-300"
                   style={{ width: `${progress}%` }}
                 />
+              </div>
+
+              {/* Upload metadata metrics */}
+              {(uploadSpeed || remainingTime) && (
+                <div className="flex items-center justify-between text-[10px] font-bold text-zinc-500 px-0.5">
+                  <span>Speed: {uploadSpeed || "estimating..."}</span>
+                  <span>ETA: {remainingTime || "estimating..."}</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-1">
+                {tusUploadRef.current && (
+                  <button
+                    type="button"
+                    onClick={isPaused ? handleResumeUpload : handlePauseUpload}
+                    className={`px-3 py-1 text-[10px] font-black tracking-tight uppercase rounded-lg border transition-colors ${
+                      isPaused 
+                        ? "bg-green-600/10 hover:bg-green-600/20 text-green-500 border-green-500/20" 
+                        : "bg-amber-600/10 hover:bg-amber-600/20 text-amber-500 border-amber-500/20"
+                    }`}
+                  >
+                    {isPaused ? "Resume" : "Pause"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleCancelUpload}
+                  className="px-3 py-1 bg-red-600/10 hover:bg-red-600/20 text-red-500 border border-red-500/20 rounded-lg text-[10px] font-black tracking-tight uppercase transition-colors"
+                >
+                  Cancel Upload
+                </button>
               </div>
             </div>
           )}
@@ -478,8 +674,13 @@ export default function CreatePostModal({
           )}
 
           <div className="flex items-center justify-between">
-            <div className="text-xs font-semibold text-zinc-400">
-              Attach media files:
+            <div>
+              <div className="text-xs font-semibold text-zinc-400">
+                Attach media files:
+              </div>
+              <div className="text-[10px] font-bold text-zinc-500 mt-0.5">
+                Short and long videos supported. Formats: MP4, MOV, WEBM, JPG, PNG, WEBP.
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <input
