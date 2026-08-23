@@ -99,6 +99,9 @@ export default function MainDashboardClient() {
   const [recommendationEvents, setRecommendationEvents] = useState<any[]>([]);
   const [loadingViralTab, setLoadingViralTab] = useState(false);
 
+  const [activeLiveSessions, setActiveLiveSessions] = useState<any[]>([]);
+  const [selectedLiveSession, setSelectedLiveSession] = useState<any>(null);
+
   const [activeLiveStreamsCount, setActiveLiveStreamsCount] = useState(0);
   const [totalLiveViewersCount, setTotalLiveViewersCount] = useState(0);
 
@@ -106,9 +109,19 @@ export default function MainDashboardClient() {
     try {
       const { data, error } = await supabase
         .from('live_sessions')
-        .select('viewer_count')
-        .eq('status', 'active');
+        .select(`
+          *,
+          host:profiles!host_id (
+            id,
+            username,
+            avatar_url,
+            full_name
+          )
+        `)
+        .eq('status', 'live')
+        .order('created_at', { ascending: false });
       if (!error && data) {
+        setActiveLiveSessions(data);
         setActiveLiveStreamsCount(data.length);
         const totalViewers = data.reduce((sum: number, item: any) => sum + (item.viewer_count || 0), 0);
         setTotalLiveViewersCount(totalViewers);
@@ -375,7 +388,11 @@ export default function MainDashboardClient() {
   };
 
   const toggleFollow = async (targetUser: any) => {
-    if (!user || !targetUser) return;
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+    if (!targetUser) return;
     const targetUserId = typeof targetUser === 'string' ? targetUser : targetUser?.id;
     const targetUsername = typeof targetUser === 'string' ? targetUser : targetUser?.username;
     if (!targetUserId && !targetUsername) return;
@@ -787,7 +804,11 @@ export default function MainDashboardClient() {
   };
 
   const handleLike = async (id: string, isLiked: boolean) => {
-    if (!user || !id) return;
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+    if (!id) return;
     
     setPosts(prevPosts => prevPosts.map(post => {
       if (post.id === id) {
@@ -821,7 +842,11 @@ export default function MainDashboardClient() {
   };
 
   const handleBookmark = async (id: string, isBookmarked: boolean) => {
-    if (!user || !id) return;
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+    if (!id) return;
 
     setPosts(prevPosts => prevPosts.map(post => 
       post.id === id ? { ...post, isBookmarked: !isBookmarked } : post
@@ -871,7 +896,11 @@ export default function MainDashboardClient() {
   };
 
   const submitComment = async (id: string, content: string) => {
-    if (!user || !id || !content?.trim()) return;
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+    if (!id || !content?.trim()) return;
 
     const { data, error: commentError } = await supabase.from('comments').insert({
       post_id: id,
@@ -1167,6 +1196,15 @@ export default function MainDashboardClient() {
             submitComment={submitComment}
             stories={stories}
             handleStoryClick={handleStoryClick}
+            activeLiveSessions={activeLiveSessions}
+            onJoinLive={(session: any) => {
+              setSelectedLiveSession(session);
+              setViewMode('live');
+            }}
+            onVideoTap={(postId: string) => {
+              setActiveReelId(postId);
+              setViewMode('reels');
+            }}
           />
         )}
         {/* ==================== VIEW MODE 2: DEDICATED SEARCH PAGE ==================== */}
@@ -1213,7 +1251,11 @@ export default function MainDashboardClient() {
             profile={profile}
             isDarkMode={isDarkMode}
             supabase={supabase}
-            onClose={() => setViewMode('feed')}
+            onClose={() => {
+              setSelectedLiveSession(null);
+              setViewMode('feed');
+            }}
+            initialSession={selectedLiveSession}
           />
         )}
         {/* ==================== VIEW MODE 4: CREATOR PROFILE PAGE ==================== */}

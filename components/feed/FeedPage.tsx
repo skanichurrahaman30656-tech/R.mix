@@ -1,9 +1,10 @@
 "use client";
 import React from 'react';
 import Image from 'next/image';
-import { Heart, MessageCircle, Share2, Bookmark, Loader2 } from 'lucide-react';
+import { Heart, MessageCircle, Share2, Bookmark, Loader2, Users, Play } from 'lucide-react';
 import { VideoPlayer } from '../shared/VideoPlayer';
 import { ViewTracker } from '../shared/ViewTracker';
+import { Lightbox } from '../shared/Lightbox';
 
 export function FeedPage({
   posts,
@@ -25,8 +26,13 @@ export function FeedPage({
   handleCommentChange,
   submitComment,
   stories,
-  handleStoryClick
+  handleStoryClick,
+  activeLiveSessions,
+  onJoinLive,
+  onVideoTap
 }: any) {
+  const [lightboxSrc, setLightboxSrc] = React.useState<string | null>(null);
+
   return (
     <>
       {/* Facebook-style Create Post Card */}
@@ -68,6 +74,59 @@ export function FeedPage({
           </button>
         </div>
       </div>
+
+      {/* Active Live Broadcasts */}
+      {activeLiveSessions && activeLiveSessions.length > 0 && (
+        <div className={`mx-4 mb-4 p-4 rounded-2xl border ${isDarkMode ? 'bg-zinc-900/90 border-zinc-800' : 'bg-white border-zinc-200'}`}>
+          <h3 className="text-xs font-bold uppercase tracking-wider text-red-500 flex items-center gap-1.5 mb-3">
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            <span>Active Live Rooms ({activeLiveSessions.length})</span>
+          </h3>
+          <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+            {activeLiveSessions.map((session: any) => (
+              <div
+                key={session.id}
+                onClick={() => onJoinLive(session)}
+                className="flex-shrink-0 w-44 rounded-xl border border-zinc-800 bg-zinc-950 p-3 hover:border-indigo-500/60 transition-all cursor-pointer relative overflow-hidden space-y-2 group"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full overflow-hidden border border-red-500/60">
+                    <Image
+                      width={50}
+                      height={50}
+                      referrerPolicy="no-referrer"
+                      src={session.host?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp'}
+                      alt={session.host?.username || 'Host'}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] text-zinc-400 font-bold truncate">@{session.host?.username || 'user'}</p>
+                    <span className="text-[9px] text-zinc-500 font-medium">Live now</span>
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-zinc-100 group-hover:text-indigo-400 transition-colors truncate">
+                    {session.title}
+                  </h4>
+                  {session.description && (
+                    <p className="text-[10px] text-zinc-500 truncate mt-0.5">{session.description}</p>
+                  )}
+                </div>
+                <div className="flex items-center justify-between pt-1 border-t border-zinc-900/60">
+                  <span className="px-1.5 py-0.5 rounded bg-red-600/10 text-red-500 border border-red-500/10 text-[8px] font-black tracking-wider uppercase">
+                    LIVE
+                  </span>
+                  <span className="text-[9px] text-zinc-400 font-bold flex items-center gap-1">
+                    <Users className="w-2.5 h-2.5" />
+                    <span>{session.viewer_count || 0}</span>
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Stories + Reels Tabs & Horizontal Scroll Section */}
       <div className={`mx-4 mb-4 p-3 rounded-2xl border ${isDarkMode ? 'bg-zinc-900/90 border-zinc-800' : 'bg-white border-zinc-200'}`}>
@@ -165,9 +224,27 @@ export function FeedPage({
                   return (
                     <div className="aspect-square bg-zinc-900 relative rounded-md overflow-hidden mx-4 my-2 border border-zinc-800/50" onDoubleClick={() => handleLike(post.id, post.isLiked)}>
                       {post.type === 'video' || post.type === 'reel' ? (
-                        <VideoPlayer src={mediaSrc} className="w-full h-full" autoPlay muted={false} controls playsInline />
+                        <div 
+                          className="w-full h-full cursor-pointer relative group" 
+                          onClick={() => onVideoTap && onVideoTap(post.id)}
+                        >
+                          <VideoPlayer src={mediaSrc} className="w-full h-full pointer-events-none" autoPlay muted={true} controls={false} playsInline />
+                          <div className="absolute inset-0 bg-black/10 hover:bg-black/30 flex items-center justify-center transition-colors">
+                            <div className="w-12 h-12 rounded-full bg-black/60 backdrop-blur-sm border border-zinc-700/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Play className="w-5 h-5 text-white fill-white ml-0.5" />
+                            </div>
+                          </div>
+                        </div>
                       ) : (
-                        <Image width={500} height={500} referrerPolicy="no-referrer" src={mediaSrc} alt="Post content" className="w-full h-full object-cover cursor-pointer" />
+                        <Image 
+                          width={500} 
+                          height={500} 
+                          referrerPolicy="no-referrer" 
+                          src={mediaSrc} 
+                          alt="Post content" 
+                          className="w-full h-full object-cover cursor-pointer hover:opacity-95 transition-opacity" 
+                          onClick={() => setLightboxSrc(mediaSrc)}
+                        />
                       )}
                     </div>
                   );
@@ -263,6 +340,10 @@ export function FeedPage({
           </>
         )}
       </div>
+
+      {lightboxSrc && (
+        <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
+      )}
     </>
   );
 }

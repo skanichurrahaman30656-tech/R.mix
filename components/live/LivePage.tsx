@@ -13,9 +13,10 @@ interface LivePageProps {
   isDarkMode: boolean;
   supabase: any;
   onClose: () => void;
+  initialSession?: any;
 }
 
-export function LivePage({ user, profile, isDarkMode, supabase, onClose }: LivePageProps) {
+export function LivePage({ user, profile, isDarkMode, supabase, onClose, initialSession }: LivePageProps) {
   // Navigation states
   const [activeSession, setActiveSession] = useState<any>(null);
   const [isHost, setIsHost] = useState(false);
@@ -114,6 +115,13 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose }: LiveP
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSession]);
+
+  useEffect(() => {
+    if (initialSession) {
+      handleJoinLive(initialSession);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSession]);
 
   // Scroll chat to bottom when new comment arrives
   useEffect(() => {

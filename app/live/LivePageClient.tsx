@@ -17,7 +17,9 @@ export default function LivePageClient() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.user) {
-          router.push('/login');
+          setUser(null);
+          setProfile(null);
+          setLoading(false);
           return;
         }
         setUser(session.user);
@@ -41,7 +43,8 @@ export default function LivePageClient() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         if (!session?.user) {
-          router.push('/login');
+          setUser(null);
+          setProfile(null);
         } else {
           setUser(session.user);
           const { data: profileData } = await supabase
