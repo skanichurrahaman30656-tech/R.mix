@@ -54,6 +54,9 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose, initial
   const singlePeerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const userTokenRef = useRef<string | null>(null);
 
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<BlobPart[]>([]);
+
   useEffect(() => {
     supabase.auth.getSession().then((res: any) => {
       userTokenRef.current = res.data.session?.access_token || null;
@@ -258,6 +261,21 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose, initial
 
       // C. Setup host realtime channels and start WebRTC/signaling
       setupRealtimeChannel(sessionData.id, true, localStream);
+
+      // Start recording for VOD persistence
+      recordedChunksRef.current = [];
+      try {
+        const recorder = new MediaRecorder(localStream, { mimeType: 'video/webm' });
+        recorder.ondataavailable = (e) => {
+          if (e.data.size > 0) {
+            recordedChunksRef.current.push(e.data);
+          }
+        };
+        recorder.start(1000);
+        mediaRecorderRef.current = recorder;
+      } catch (err) {
+        console.warn("MediaRecorder not supported or failed to start", err);
+      }
     } catch (err: any) {
       console.error("Failed to start live stream database session:", err);
       setMediaError(`Unable to create live session: ${err.message || 'Database insert failed'}`);
@@ -275,6 +293,42 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose, initial
   const handleEndLive = async () => {
     if (!activeSession) return;
     
+    // Stop and save recording if host
+    if (isHost && mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      const sessionId = activeSession.id;
+      const title = activeSession.title;
+      
+      mediaRecorderRef.current.onstop = async () => {
+        try {
+          if (recordedChunksRef.current.length > 0) {
+            const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+            const fileName = `live_${sessionId}_${Date.now()}.webm`;
+            
+            const { data: uploadData, error: uploadError } = await supabase.storage
+              .from('media')
+              .upload(fileName, blob, { contentType: 'video/webm' });
+              
+            if (!uploadError && uploadData) {
+              const { data: publicData } = supabase.storage.from('media').getPublicUrl(fileName);
+              if (publicData?.publicUrl) {
+                // Insert as a post so it appears in Feed
+                await supabase.from('posts').insert({
+                  user_id: user.id,
+                  content: `🔴 Replay: ${title}`,
+                  type: 'video',
+                  media_url: JSON.stringify([publicData.publicUrl])
+                });
+              }
+            }
+          }
+        } catch (e) {
+          console.error("Failed to save live recording:", e);
+        }
+      };
+      
+      mediaRecorderRef.current.stop();
+    }
+
     // Stop all media tracks immediately
     if (localStream) {
       localStream.getTracks().forEach(track => {

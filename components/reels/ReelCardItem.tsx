@@ -78,16 +78,26 @@ export function ReelCardItem({
 
   // Animation & Feedback
   const [showHeartPop, setShowHeartPop] = useState(false);
-  const [lastTap, setLastTap] = useState(0);
+  const clickTimer = useRef<NodeJS.Timeout | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const holdTimer = useRef<NodeJS.Timeout | null>(null);
+  const isHolding = useRef(false);
+  const ignoreNextClick = useRef(false);
 
   const isActive = activeReelId === reelItem.id;
 
   useEffect(() => {
+    let timer: NodeJS.Timeout | null = null;
     if (isActive) {
-      trackView(supabase, reelItem.type === "video" ? "video" : "reel", reelItem.id);
+      timer = setTimeout(() => {
+        trackView(supabase, reelItem.type === "video" ? "video" : "reel", reelItem.id, user?.id);
+      }, 2000);
     }
-  }, [isActive, reelItem.id, reelItem.type]);
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [isActive, reelItem.id, reelItem.type, user?.id]);
   const isOwner = user?.id === reelItem.user_id;
   const isFollowing = followedUsers[reelItem.user_id] || followedUsers[reelItem.author] || false;
 
@@ -231,6 +241,61 @@ export function ReelCardItem({
     }
   };
 
+  const handlePointerDown = (e: React.PointerEvent) => {
+    // start 3x speed hold timer
+    holdTimer.current = setTimeout(() => {
+      isHolding.current = true;
+      ignoreNextClick.current = true;
+      if (videoRef.current) {
+        videoRef.current.playbackRate = 3;
+      }
+    }, 300);
+  };
+
+  const handlePointerUpOrLeave = (e: React.PointerEvent) => {
+    if (holdTimer.current) {
+      clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+    if (isHolding.current) {
+      isHolding.current = false;
+      if (videoRef.current) {
+        videoRef.current.playbackRate = 1;
+      }
+    }
+  };
+
+  const handleVideoClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (ignoreNextClick.current) {
+      ignoreNextClick.current = false;
+      return;
+    }
+    
+    if (clickTimer.current) {
+      // It's a double tap
+      clearTimeout(clickTimer.current);
+      clickTimer.current = null;
+      
+      if (!reelItem.isLiked) {
+        handleLike(reelItem.id, reelItem.isLiked);
+        trackEngagementEvent(supabase, {
+          user_id: user?.id,
+          post_id: reelItem.id,
+          event_type: 'like'
+        });
+      }
+      setShowHeartPop(true);
+      setTimeout(() => setShowHeartPop(false), 1000);
+    } else {
+      // First tap, wait for second
+      clickTimer.current = setTimeout(() => {
+        clickTimer.current = null;
+        togglePlayPause();
+      }, 250);
+    }
+  };
+
   const handleRewind = () => {
     const vid = videoRef.current;
     if (!vid) return;
@@ -295,23 +360,6 @@ export function ReelCardItem({
       post_id: reelItem.id,
       event_type: 'profile_visit_after_view'
     });
-  };
-
-  const handleDoubleTap = (e: React.MouseEvent) => {
-    const now = Date.now();
-    if (now - lastTap < 300) {
-      if (!reelItem.isLiked) {
-        handleLike(reelItem.id, reelItem.isLiked);
-        trackEngagementEvent(supabase, {
-          user_id: user?.id,
-          post_id: reelItem.id,
-          event_type: 'like'
-        });
-      }
-      setShowHeartPop(true);
-      setTimeout(() => setShowHeartPop(false), 1000);
-    }
-    setLastTap(now);
   };
 
   const handleSendComment = async () => {
@@ -394,7 +442,6 @@ export function ReelCardItem({
       ref={cardRef}
       key={reelItem.id} 
       className="snap-start h-full min-h-[560px] max-h-[740px] my-2 relative rounded-2xl overflow-hidden bg-black text-white flex flex-col justify-end p-4 border border-zinc-800 shadow-2xl group select-none"
-      onClick={handleDoubleTap}
     >
       {/* Toast Notification Overlay */}
       {toastMessage && (
@@ -445,7 +492,11 @@ export function ReelCardItem({
             previousTimeRef.current = vid.currentTime;
           }
         }}
-        onClick={togglePlayPause}
+        onClick={handleVideoClick}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUpOrLeave}
+        onPointerLeave={handlePointerUpOrLeave}
+        onPointerCancel={handlePointerUpOrLeave}
       />
 
       {/* Heart Pop Animation on Double Tap */}

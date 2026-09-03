@@ -1,14 +1,18 @@
-export const trackView = async (supabase: any, type: string, id: string) => {
+export const trackView = async (supabase: any, type: string, id: string, userId?: string) => {
   if (typeof window === 'undefined') return;
+
   const sessionKey = `viewed_${type}_${id}`;
   if (sessionStorage.getItem(sessionKey)) return;
   sessionStorage.setItem(sessionKey, 'true');
 
   try {
+    if (userId) {
+      // We try to insert unique reach (this will fail silently if they already viewed, due to RLS or unique constraint)
+      await supabase.from('post_views').insert({ post_id: id, user_id: userId });
+    }
+
     // In R.mix, reels and videos in the feed are stored in the posts table
     // We attempt to increment in the posts table first for all of them.
-    // If it's explicitly from reels or videos table, we could use those, 
-    // but the UI currently uses the posts table for all feed items.
     await supabase.rpc('increment_post_views', { post_id: id });
     
     // Just in case it actually belongs to reels or videos table

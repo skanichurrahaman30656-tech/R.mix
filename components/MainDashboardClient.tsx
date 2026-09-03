@@ -568,7 +568,8 @@ export default function MainDashboardClient() {
           comments: Array.isArray(p.comments) ? p.comments : [],
           commentsCount: commentsCount,
           caption: p.content,
-          views: Array.isArray(p.post_views) ? p.post_views.length : 0,
+          views: p.views || 0,
+          savesCount: Array.isArray(p.saved_posts) ? p.saved_posts.length : 0,
           post_views: Array.isArray(p.post_views) ? p.post_views : [],
           isLiked: userId && Array.isArray(p.likes) ? p.likes.some((l: any) => l.user_id === userId) : false,
           isBookmarked: userId && Array.isArray(p.saved_posts) ? p.saved_posts.some((s: any) => s.user_id === userId) : false,
@@ -669,8 +670,13 @@ export default function MainDashboardClient() {
 
     const channel = supabase
       .channel('dashboard-realtime-channel')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => {
-        fetchPosts(user.id);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, (payload) => {
+        if (payload.eventType === 'UPDATE' && payload.new && payload.old && payload.new.views !== payload.old.views) {
+          // Just update the view count in local state to avoid massive refetches
+          setPosts(prev => prev.map(p => p.id === payload.new.id ? { ...p, views: payload.new.views } : p));
+        } else {
+          fetchPosts(user.id);
+        }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'likes' }, () => {
         fetchPosts(user.id);
@@ -940,9 +946,6 @@ export default function MainDashboardClient() {
     if (!reelId) return;
     if (currentTime > 3 && !viewedReelIds[reelId]) {
       setViewedReelIds(prev => ({ ...prev, [reelId]: true }));
-      supabase.from("post_views").insert({ post_id: reelId, user_id: user?.id }).then((res) => {
-        if (res.error) console.warn('Post view insert failed:', (res.error as any)?.message);
-      });
       setPosts(prev => prev.map(p => p.id === reelId ? { ...p, views: (p.views || 0) + 1 } : p));
     }
   };
@@ -992,7 +995,8 @@ export default function MainDashboardClient() {
   const totalUserViewsCount = userOwnPosts.reduce((acc, p) => acc + (p.views || 0), 0);
   
   const estimatedReachCount = new Set(userOwnPosts.flatMap(p => (p.post_views || []).map((v: any) => v.user_id))).size;
-  const userEngagementRate = totalUserViewsCount > 0 ? (((totalUserLikesCount + totalUserCommentsCount) / totalUserViewsCount) * 100).toFixed(1) : "0.0";
+  const totalUserSavesCount = userOwnPosts.reduce((acc, p) => acc + (p.savesCount || 0), 0);
+  const userEngagementRate = totalUserViewsCount > 0 ? (((totalUserLikesCount + totalUserCommentsCount + totalUserSavesCount) / totalUserViewsCount) * 100).toFixed(1) : "0.0";
   const estimatedEarnings = "0.00";
   
   const getGrowthTips = () => {
@@ -1171,6 +1175,13 @@ export default function MainDashboardClient() {
         </div>
       </nav>
 
+      <input 
+        type="file" 
+        ref={storyInputRef} 
+        style={{ display: 'none' }} 
+        accept="image/*,video/mp4,video/quicktime,video/webm" 
+        onChange={handleStoryUpload} 
+      />
       <main className="max-w-xl mx-auto py-2">
         
         {/* ==================== VIEW MODE 1: GLOBAL HOME FEED ==================== */}
