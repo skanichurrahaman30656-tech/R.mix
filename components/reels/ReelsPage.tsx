@@ -2,6 +2,7 @@
 import React from 'react';
 import { Film } from 'lucide-react';
 import { ReelCardItem } from './ReelCardItem';
+import AdUnit from '../shared/AdUnit';
 
 export function ReelsPage({
   reelsFeed,
@@ -45,9 +46,9 @@ export function ReelsPage({
           </button>
         </div>
       ) : (
-        reelsFeed.map((reelItem: any) => (
-          <ReelCardItem 
-            key={reelItem.id}
+        reelsFeed.map((reelItem: any, index: number) => (
+          <React.Fragment key={reelItem.id}>
+            <ReelCardItem 
             reelItem={reelItem}
             activeReelId={activeReelId}
             setActiveReelId={setActiveReelId}
@@ -68,7 +69,15 @@ export function ReelsPage({
             handleEditPost={handleEditPost}
             setCreateMode={setCreateMode}
             setShowCreatePost={setShowCreatePost}
-          />
+            />
+            {/* Insert advertisement naturally after every 2 or 3 reels */}
+            {(index + 1) % 3 === 0 && (
+              <div className="w-full h-full min-h-[calc(100vh-3.5rem-4rem)] flex flex-col items-center justify-center snap-start snap-always relative bg-zinc-950 border-b border-zinc-900">
+                <span className="text-xs text-zinc-500 uppercase tracking-widest block mb-4">Advertisement</span>
+                <AdUnit format="fluid" layoutKey="-gw-1+2a-9x+5c" className="w-full max-w-sm" />
+              </div>
+            )}
+          </React.Fragment>
         ))
       )}
     </div>

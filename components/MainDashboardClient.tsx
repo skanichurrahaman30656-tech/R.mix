@@ -1,5 +1,6 @@
 "use client";
 import { ReelCardItem } from './reels/ReelCardItem';
+import AdUnit from './shared/AdUnit';
 import Image from "next/image";
 import { VideoPlayer } from "./shared/VideoPlayer";
 import { StoryViewer } from "./story/StoryViewer";
@@ -1182,7 +1183,9 @@ export default function MainDashboardClient() {
         accept="image/*,video/mp4,video/quicktime,video/webm" 
         onChange={handleStoryUpload} 
       />
-      <main className="max-w-xl mx-auto py-2">
+      <div className="w-full flex justify-center items-start relative max-w-7xl mx-auto">
+        <div className="flex-1 hidden xl:block" />
+        <main className="w-full max-w-xl py-2 shrink-0">
         
         {/* ==================== VIEW MODE 1: GLOBAL HOME FEED ==================== */}
         {viewMode === 'feed' && (
@@ -1625,6 +1628,12 @@ export default function MainDashboardClient() {
         )}
       
       </main>
+        <aside className="hidden xl:block flex-1 pl-8 pt-6 relative">
+          <div className="sticky top-20 max-w-[300px]">
+            <AdUnit format="rectangle" layoutKey="-gw-1+2a-9x+5c" />
+          </div>
+        </aside>
+      </div>
 
       {/* Bottom Navigation */}
       <nav className={`fixed bottom-0 w-full border-t z-40 transition-colors ${isDarkMode ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-zinc-200'}`}>

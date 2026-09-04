@@ -5,6 +5,7 @@ import { Heart, MessageCircle, Share2, Bookmark, Loader2, Users, Play, Volume2, 
 import { VideoPlayer } from '../shared/VideoPlayer';
 import { ViewTracker } from '../shared/ViewTracker';
 import { Lightbox } from '../shared/Lightbox';
+import AdUnit from '../shared/AdUnit';
 
 export function FeedPage({
   posts,
@@ -186,8 +187,14 @@ export function FeedPage({
           </div>
         ) : (
           <>
-            {posts.map((post: any) => (
-              <article key={post.id} className={`pb-4 border-b last:border-0 ${isDarkMode ? 'bg-zinc-950 border-zinc-900' : 'bg-white border-zinc-200'} relative`}>
+            {posts.map((post: any, index: number) => (
+              <React.Fragment key={post.id}>
+                {index > 0 && index % 4 === 0 && (
+                  <div className={`pb-4 border-b ${isDarkMode ? 'border-zinc-900' : 'border-zinc-200'} py-4`}>
+                    <AdUnit format="fluid" layoutKey="-gw-1+2a-9x+5c" />
+                  </div>
+                )}
+                <article className={`pb-4 border-b last:border-0 ${isDarkMode ? 'bg-zinc-950 border-zinc-900' : 'bg-white border-zinc-200'} relative`}>
                 <ViewTracker type={post.type === "reel" ? "reel" : post.type === "video" ? "video" : "post"} id={post.id} userId={user?.id} />
                 {/* Header */}
                 <div className="px-4 py-3 flex items-center justify-between">
@@ -342,6 +349,7 @@ export function FeedPage({
                   </div>
                 </div>
               </article>
+              </React.Fragment>
             ))}
 
             {hasMorePosts && (
