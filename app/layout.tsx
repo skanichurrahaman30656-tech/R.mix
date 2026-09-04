@@ -23,12 +23,16 @@ export const metadata: Metadata = {
     title: "R.mix – Premium Social Experience Platform",
     description: "Experience the next level of social connection on R.mix. Share high-fidelity reels, stories, full-length videos, and broadcast live streams directly to your audience.",
   },
+  other: {
+    "google-adsense-account": "ca-pub-8344189408835852",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>
+        <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8344189408835852" crossOrigin="anonymous"></script>
         <meta name="google-site-verification" content="1NCwlfSEj1DHfA91luhxp-yMnxRXb07l9K4JWPGGu-c" />
         <script
           type="application/ld+json"
