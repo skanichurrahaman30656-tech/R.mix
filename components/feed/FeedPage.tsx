@@ -33,7 +33,6 @@ export function FeedPage({
   onVideoTap
 }: any) {
   const [lightboxSrc, setLightboxSrc] = React.useState<string | null>(null);
-  const [isFeedMuted, setIsFeedMuted] = React.useState(true);
 
   return (
     <>
@@ -236,18 +235,9 @@ export function FeedPage({
                           className="w-full h-full cursor-pointer relative group" 
                           onClick={() => onVideoTap && onVideoTap(post.id)}
                         >
-                          <VideoPlayer src={mediaSrc} className="w-full h-full pointer-events-none" autoPlay muted={isFeedMuted} controls={false} playsInline />
+                          <VideoPlayer src={mediaSrc} className="w-full h-full pointer-events-none" autoPlay muted={false} controls={false} playsInline />
                           
-                          {/* Mute Toggle Button */}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setIsFeedMuted(!isFeedMuted);
-                            }}
-                            className="absolute bottom-3 right-3 z-20 p-2 rounded-full bg-black/50 backdrop-blur hover:bg-black/70 transition-colors pointer-events-auto"
-                          >
-                            {isFeedMuted ? <VolumeX className="w-4 h-4 text-white" /> : <Volume2 className="w-4 h-4 text-white" />}
-                          </button>
+                          
 
                           <div className="absolute inset-0 bg-black/10 hover:bg-black/30 flex items-center justify-center transition-colors pointer-events-none">
                             <div className="w-12 h-12 rounded-full bg-black/60 backdrop-blur-sm border border-zinc-700/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">

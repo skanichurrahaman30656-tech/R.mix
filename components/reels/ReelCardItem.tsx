@@ -146,13 +146,7 @@ export function ReelCardItem({
               });
             }
 
-            // Record view in live Supabase if user is logged in
-            if (user) {
-              supabase.from('post_views').upsert({
-                post_id: reelItem.id,
-                user_id: user.id
-              }, { onConflict: 'post_id,user_id' }).then(() => {});
-            }
+            // Relying entirely on trackView (2s timer) to insert to post_views and broadcast
           } else if (!entry.isIntersecting && hasRecordedImpression.current) {
             // Video exited viewport
             trackEngagementEvent(supabase, {

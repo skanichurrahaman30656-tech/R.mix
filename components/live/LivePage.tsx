@@ -530,7 +530,8 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose, initial
       });
 
       // Filter out host from viewer count
-      const count = viewersList.length;
+      const filteredViewers = viewersList.filter(v => v.isHost !== true);
+      const count = filteredViewers.length;
       setViewerCount(count);
       setActiveViewers(viewersList);
 
@@ -551,7 +552,8 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose, initial
         await channel.track({
           username: profile?.username || 'user',
           avatar_url: profile?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp',
-          joined_at: new Date().toISOString()
+          joined_at: new Date().toISOString(),
+          isHost: hostMode
         });
 
         // If viewer, broadcast join request to host to trigger WebRTC setup

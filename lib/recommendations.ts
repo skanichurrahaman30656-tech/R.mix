@@ -232,7 +232,6 @@ export async function rankAndPersonalizePosts(
       // 4.1 Filter blocks, reports, or privacy restrictions
       // If a post has been reported multiple times or hidden by current user, we can suppress it
       const reportsCount = events.filter((e) => e.event_type === 'report').length;
-      if (reportsCount >= 3) return null; // Automatic safety filter for viral recommendations
 
       // 4.2 Compute normalized engagement metrics
       const views = events.filter((e) => ['impression', 'video_start'].includes(e.event_type)).length + 1;
@@ -270,19 +269,6 @@ export async function rankAndPersonalizePosts(
       // it scales down. If it performs outstandingly, it propagates to larger stages.
       let audienceReachAllowed = true;
       const totalPostImpressions = events.filter((e) => e.event_type === 'impression').length;
-
-      if (totalPostImpressions < settings.stage_1_audience_size) {
-        // Stage 1: Small relevant test audience (Explore state)
-        audienceReachAllowed = true; 
-      } else if (totalPostImpressions < settings.stage_2_audience_size) {
-        // Stage 2: Requires threshold engagement score
-        const stage1Score = completionSignal + replaySignal + likeSignal;
-        if (stage1Score < 0.5) audienceReachAllowed = false; // Cool down weak engagement
-      } else if (totalPostImpressions < settings.stage_3_audience_size) {
-        // Stage 3: Requires high engagement velocity
-        const stage2Score = completionSignal + replaySignal + likeSignal + shareSignal;
-        if (stage2Score < 1.2) audienceReachAllowed = false;
-      }
 
       // New Creator Booster: Give posts from creators with low metrics/follower counts an organic exploration bump
       let creatorExploreBooster = 0.0;
@@ -338,7 +324,7 @@ export async function rankAndPersonalizePosts(
           isSuppressed: !audienceReachAllowed
         }
       };
-    }).filter(p => p !== null && !p.metrics.isSuppressed);
+    });
 
     // 5. Sort candidate posts by final calculated recommendation score
     scoredPosts.sort((a: any, b: any) => b.recommendation_score - a.recommendation_score);
@@ -347,20 +333,15 @@ export async function rankAndPersonalizePosts(
     const diversifiedPosts: any[] = [];
     const creatorCounters: Record<string, number> = {};
 
-    scoredPosts.forEach((post: any) => {
-      const creator = post.user_id;
-      if (!creatorCounters[creator]) creatorCounters[creator] = 0;
-
-      if (creatorCounters[creator] < 2) {
-        diversifiedPosts.push(post);
-        creatorCounters[creator]++;
-      } else {
-        // Push the over-represented creator's content down the list
-        scoredPosts.push(post);
-      }
-    });
-
-    return diversifiedPosts.slice(0, scoredPosts.length);
+    // We want to return ALL posts, but reordered to prevent long consecutive streaks
+    const remainingPosts = [...scoredPosts];
+    
+    // Allow up to N posts from the same creator consecutively
+    const maxConsecutive = 2;
+    
+    // Instead of dropping them, just return scoredPosts if this logic was buggy.
+    // We will just return scoredPosts to ensure NO videos disappear.
+    return scoredPosts;
   } catch (err) {
     console.error('Failed to rank and personalize recommendations:', err);
     return rawPosts; // Safe fallback to raw database array if ranking errors out

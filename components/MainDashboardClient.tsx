@@ -41,7 +41,7 @@ export default function MainDashboardClient() {
   useEffect(() => { pageRef.current = page; }, [page]);
   const [hasMorePosts, setHasMorePosts] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const POSTS_LIMIT = 5;
+  const POSTS_LIMIT = 1000;
   const [stories, setStories] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [sharePostId, setSharePostId] = useState<string | null>(null);
@@ -51,6 +51,14 @@ export default function MainDashboardClient() {
   const [messagesList, setMessagesList] = useState<any[]>([]);
   
   const [user, setUser] = useState<any>(null);
+  const [dashboardStats, setDashboardStats] = useState({
+    totalPosts: 0,
+    totalLikes: 0,
+    totalComments: 0,
+    totalViews: 0,
+    totalSaves: 0,
+    reach: 0
+  });
   const [profile, setProfile] = useState<any>(null);
   const [followersCount, setFollowersCount] = useState<number>(0);
   const [followingCount, setFollowingCount] = useState<number>(0);
@@ -510,6 +518,40 @@ export default function MainDashboardClient() {
     }
   };
 
+  const fetchDashboardStats = async (uid: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .select('id, user_id, likes(user_id), comments(id), saved_posts(user_id), post_views(user_id)')
+        .eq('user_id', uid);
+      if (error) throw error;
+      
+      let tLikes = 0, tComments = 0, tViews = 0, tSaves = 0;
+      let reachSet = new Set();
+      
+      if (data) {
+        data.forEach((p: any) => {
+          tLikes += (p.likes?.length || 0);
+          tComments += (p.comments?.length || 0);
+          tViews += (Array.isArray(p.post_views) ? p.post_views.length : 0);
+          tSaves += (p.saved_posts?.length || 0);
+          (p.post_views || []).forEach((v: any) => reachSet.add(v.user_id));
+        });
+      }
+      
+      setDashboardStats({
+        totalPosts: data ? data.length : 0,
+        totalLikes: tLikes,
+        totalComments: tComments,
+        totalViews: tViews,
+        totalSaves: tSaves,
+        reach: reachSet.size
+      });
+    } catch (err) {
+      console.error("Dashboard Stats Error:", err);
+    }
+  };
+  
   const fetchPosts = async (userId?: string, pageIndex = pageRef.current, isLoadMore = false, forceRefresh = false) => {
     if (isLoadMore) setIsLoadingMore(true);
     else if (postsRef.current.length === 0) setLoading(true);
@@ -569,7 +611,7 @@ export default function MainDashboardClient() {
           comments: Array.isArray(p.comments) ? p.comments : [],
           commentsCount: commentsCount,
           caption: p.content,
-          views: p.views || 0,
+          views: Array.isArray(p.post_views) ? p.post_views.length : 0,
           savesCount: Array.isArray(p.saved_posts) ? p.saved_posts.length : 0,
           post_views: Array.isArray(p.post_views) ? p.post_views : [],
           isLiked: userId && Array.isArray(p.likes) ? p.likes.some((l: any) => l.user_id === userId) : false,
@@ -626,6 +668,7 @@ export default function MainDashboardClient() {
       setProfile(data);
 
       fetchPosts(uid);
+      fetchDashboardStats(uid);
       fetchStories(uid);
       fetchFollowData(uid);
       fetchSuggestedUsers(uid);
@@ -645,6 +688,7 @@ export default function MainDashboardClient() {
             .single()
             .then(({ data }) => setProfile(data));
           fetchPosts(currentUser.id);
+          fetchDashboardStats(currentUser.id);
           fetchFollowData(currentUser.id);
           fetchSuggestedUsers(currentUser.id);
           fetchNotifications(currentUser.id);
@@ -947,7 +991,7 @@ export default function MainDashboardClient() {
     if (!reelId) return;
     if (currentTime > 3 && !viewedReelIds[reelId]) {
       setViewedReelIds(prev => ({ ...prev, [reelId]: true }));
-      setPosts(prev => prev.map(p => p.id === reelId ? { ...p, views: (p.views || 0) + 1 } : p));
+      // Relying on ViewTracker for views, removed optimistic update to prevent double-counting
     }
   };
 
@@ -990,13 +1034,12 @@ export default function MainDashboardClient() {
   const reelsFeed = posts.filter(p => p.type === 'reel' || p.type === 'video');
 
   // Real Computed User Analytics for Professional Dashboard
-  const totalUserPostsCount = userOwnPosts.length;
-  const totalUserLikesCount = userOwnPosts.reduce((acc, p) => acc + (p.likes || 0), 0);
-  const totalUserCommentsCount = userOwnPosts.reduce((acc, p) => acc + (p.commentsCount || 0), 0);
-  const totalUserViewsCount = userOwnPosts.reduce((acc, p) => acc + (p.views || 0), 0);
-  
-  const estimatedReachCount = new Set(userOwnPosts.flatMap(p => (p.post_views || []).map((v: any) => v.user_id))).size;
-  const totalUserSavesCount = userOwnPosts.reduce((acc, p) => acc + (p.savesCount || 0), 0);
+  const totalUserPostsCount = dashboardStats.totalPosts;
+  const totalUserLikesCount = dashboardStats.totalLikes;
+  const totalUserCommentsCount = dashboardStats.totalComments;
+  const totalUserViewsCount = dashboardStats.totalViews;
+  const estimatedReachCount = dashboardStats.reach;
+  const totalUserSavesCount = dashboardStats.totalSaves;
   const userEngagementRate = totalUserViewsCount > 0 ? (((totalUserLikesCount + totalUserCommentsCount + totalUserSavesCount) / totalUserViewsCount) * 100).toFixed(1) : "0.0";
   const estimatedEarnings = "0.00";
   
@@ -1624,6 +1667,7 @@ export default function MainDashboardClient() {
             user={user} 
             onClose={() => setViewMode('profile')} 
             onLogout={handleLogout} 
+            onEditProfile={() => setShowEditProfile(true)}
           />
         )}
       
