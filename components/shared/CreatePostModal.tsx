@@ -2,6 +2,7 @@
 import Image from "next/image";
 import { useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
+import { runCopyrightCheck } from "@/lib/copyright";
 import { X, Image as ImageIcon, Video, Loader2, MapPin, Tag, Globe, Lock, Users, ShieldAlert, CheckCircle2, FileText, AlertCircle } from "lucide-react";
 import { compressImage } from "@/lib/compress";
 import * as tus from "tus-js-client";
@@ -163,7 +164,7 @@ export default function CreatePostModal({
           },
           chunkSize: 6 * 1024 * 1024, // 6MB sequential chunk size
           onError: (err) => {
-            console.error("TUS error occurred:", err);
+            console.warn("TUS error occurred:", err);
             reject(err);
           },
           onProgress: (bytesSent, bytesTotal) => {
@@ -385,6 +386,10 @@ export default function CreatePostModal({
         throw new Error(postError.message);
       }
 
+      if (newPostData && (postType === 'video' || postType === 'reel')) {
+        await runCopyrightCheck(supabase, user.id, newPostData.id, fullCaption, mediaUrlString || '');
+      }
+
       setProgress(100);
       setStatusMessage("Published successfully!");
 
@@ -405,7 +410,7 @@ export default function CreatePostModal({
         onClose();
       }, 700);
     } catch (err: any) {
-      console.error(err);
+      console.warn(err);
       if (err.name === 'AbortError') {
         setError("Upload cancelled.");
       } else if (

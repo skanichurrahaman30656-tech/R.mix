@@ -4,7 +4,12 @@ import { Film } from 'lucide-react';
 import { ReelCardItem } from './ReelCardItem';
 import AdUnit from '../shared/AdUnit';
 
+import { Loader2 } from 'lucide-react';
 export function ReelsPage({
+  loadMoreRef,
+  hasMorePosts,
+  isLoadingMore,
+
   reelsFeed,
   setCreateMode,
   setShowCreatePost,
@@ -79,6 +84,11 @@ export function ReelsPage({
             )}
           </React.Fragment>
         ))
+      )}
+      {hasMorePosts && (
+        <div ref={loadMoreRef} className="w-full flex items-center justify-center p-8 snap-start snap-always">
+          {isLoadingMore ? <Loader2 className="w-8 h-8 animate-spin text-indigo-500" /> : <div className="h-8" />}
+        </div>
       )}
     </div>
   );

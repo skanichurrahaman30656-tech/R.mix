@@ -1,3 +1,4 @@
+'use client';
 "use client";
 import React, { useRef, useEffect, useState } from 'react';
 import Image from 'next/image';
@@ -6,9 +7,9 @@ import { trackView } from '../../lib/analytics';
 import { trackEngagementEvent } from '../../lib/recommendations';
 import { 
   VolumeX, Volume2, Music, Heart, MessageCircle, Share2, Bookmark, Eye, 
-  Play, Pause, RotateCcw, RotateCw, Settings, MoreVertical, Download, 
+  Play, Pause, RotateCcw, RotateCw, Settings, MoreVertical, MoreHorizontal, Download, 
   Edit3, Trash2, Repeat, FileText, Globe, Sliders, HelpCircle, Star, 
-  Sparkles, Smile, Image as ImageIcon, AtSign, Check, X, ChevronDown, ChevronUp, Clock,
+  Sparkles, Smile, Image as ImageIcon, AtSign, Check, X, ChevronDown, ChevronUp, Clock, AlertTriangle,
   UserX, Shield
 } from 'lucide-react';
 
@@ -50,10 +51,14 @@ export function ReelCardItem({
   const [volume, setVolume] = useState(1);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [autoNext, setAutoNext] = useState(true);
+  const [isInViewport, setIsInViewport] = useState(false);
 
   // UI Modals & Menus
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [moreSubmenu, setMoreSubmenu] = useState<'none'|'playback'|'quality'>('none');
+  const [isClearMode, setIsClearMode] = useState(false);
+  const [showCaptions, setShowCaptions] = useState(false);
   const [showTranscriptModal, setShowTranscriptModal] = useState(false);
   const [showAudioLangModal, setShowAudioLangModal] = useState(false);
   const [showWhyThisModal, setShowWhyThisModal] = useState(false);
@@ -81,11 +86,29 @@ export function ReelCardItem({
   const clickTimer = useRef<NodeJS.Timeout | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Overlay Controls Visibility Management
+  const [showControls, setShowControls] = useState(false);
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const triggerShowControls = () => {
+    setShowControls(true);
+    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    controlsTimeoutRef.current = setTimeout(() => {
+      setShowControls(false);
+    }, 2800);
+  };
+
   const holdTimer = useRef<NodeJS.Timeout | null>(null);
   const isHolding = useRef(false);
   const ignoreNextClick = useRef(false);
 
   const isActive = activeReelId === reelItem.id;
+
+  useEffect(() => {
+    if (isActive && cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [isActive]);
 
   useEffect(() => {
     let timer: NodeJS.Timeout | null = null;
@@ -133,6 +156,12 @@ export function ReelCardItem({
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setIsInViewport(true);
+          } else {
+            setIsInViewport(false);
+          }
+
           if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
             setActiveReelId(reelItem.id);
             
@@ -168,7 +197,7 @@ export function ReelCardItem({
           }
         });
       },
-      { threshold: 0.5 }
+      { threshold: [0, 0.5] }
     );
 
     observer.observe(el);
@@ -261,6 +290,10 @@ export function ReelCardItem({
 
   const handleVideoClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isClearMode) {
+      setIsClearMode(false);
+      return;
+    }
     if (ignoreNextClick.current) {
       ignoreNextClick.current = false;
       return;
@@ -286,20 +319,25 @@ export function ReelCardItem({
       clickTimer.current = setTimeout(() => {
         clickTimer.current = null;
         togglePlayPause();
+        triggerShowControls();
       }, 250);
     }
   };
 
-  const handleRewind = () => {
+  const handleRewind = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     const vid = videoRef.current;
     if (!vid) return;
-    vid.currentTime = Math.max(0, vid.currentTime - 5);
+    vid.currentTime = Math.max(0, vid.currentTime - 10);
+    triggerShowControls();
   };
 
-  const handleForward = () => {
+  const handleForward = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     const vid = videoRef.current;
     if (!vid) return;
-    vid.currentTime = Math.min(vid.duration || 0, vid.currentTime + 5);
+    vid.currentTime = Math.min(vid.duration || 0, vid.currentTime + 10);
+    triggerShowControls();
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -445,168 +483,168 @@ export function ReelCardItem({
       )}
 
       {/* Video Element */}
-      <video 
-        ref={videoRef}
-        src={mediaSrc} 
-        className="absolute inset-0 w-full h-full object-cover z-0 cursor-pointer" 
-        loop 
-        muted={isReelsMuted} 
-        playsInline 
-        preload="metadata"
-        onTimeUpdate={(e) => {
-          const vid = e.target as HTMLVideoElement;
-          handleReelTimeUpdate(reelItem.id, vid.currentTime);
-          setCurrentTime(vid.currentTime);
-          if (vid.duration) {
-            setDuration(vid.duration);
-            const pct = (vid.currentTime / vid.duration) * 100;
-            setProgress(pct);
-            setCompletionRate(Math.round(pct));
+      {isInViewport ? (
+        <video 
+          ref={videoRef}
+          src={mediaSrc} 
+          className="absolute inset-0 w-full h-full object-cover z-0 cursor-pointer" 
+          loop 
+          muted={isReelsMuted} 
+          playsInline 
+          preload="metadata"
+          onTimeUpdate={(e) => {
+            const vid = e.target as HTMLVideoElement;
+            handleReelTimeUpdate(reelItem.id, vid.currentTime);
+            setCurrentTime(vid.currentTime);
+            if (vid.duration) {
+              setDuration(vid.duration);
+              const pct = (vid.currentTime / vid.duration) * 100;
+              setProgress(pct);
+              setCompletionRate(Math.round(pct));
 
-            // Record completion when percentage watched is >= 95%
-            if (pct >= 95 && !hasRecordedCompletion.current) {
-              hasRecordedCompletion.current = true;
-              trackEngagementEvent(supabase, {
-                user_id: user?.id,
-                post_id: reelItem.id,
-                event_type: 'video_completion',
-                watch_duration: vid.currentTime,
-                percentage_watched: Math.round(pct)
-              });
-            }
+              // Record completion when percentage watched is >= 95%
+              if (pct >= 95 && !hasRecordedCompletion.current) {
+                hasRecordedCompletion.current = true;
+                trackEngagementEvent(supabase, {
+                  user_id: user?.id,
+                  post_id: reelItem.id,
+                  event_type: 'video_completion',
+                  watch_duration: vid.currentTime,
+                  percentage_watched: Math.round(pct)
+                });
+              }
 
-            // Detect replays: if current time jumps backwards significantly from previous check
-            if (vid.currentTime < previousTimeRef.current - 2 && previousTimeRef.current > vid.duration - 4) {
-              trackEngagementEvent(supabase, {
-                user_id: user?.id,
-                post_id: reelItem.id,
-                event_type: 'replay'
-              });
+              // Detect replays: if current time jumps backwards significantly from previous check
+              if (vid.currentTime < previousTimeRef.current - 2 && previousTimeRef.current > vid.duration - 4) {
+                trackEngagementEvent(supabase, {
+                  user_id: user?.id,
+                  post_id: reelItem.id,
+                  event_type: 'replay'
+                });
+              }
+              previousTimeRef.current = vid.currentTime;
             }
-            previousTimeRef.current = vid.currentTime;
-          }
-        }}
-        onClick={handleVideoClick}
-        onPointerDown={handlePointerDown}
-        onPointerUp={handlePointerUpOrLeave}
-        onPointerLeave={handlePointerUpOrLeave}
-        onPointerCancel={handlePointerUpOrLeave}
-      />
+          }}
+          onClick={handleVideoClick}
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUpOrLeave}
+          onPointerLeave={handlePointerUpOrLeave}
+          onPointerCancel={handlePointerUpOrLeave}
+        />
+      ) : (
+        <div className="absolute inset-0 bg-zinc-900 animate-pulse z-0" />
+      )}
 
       {/* Heart Pop Animation on Double Tap */}
       {showHeartPop && (
         <div className="absolute inset-0 flex items-center justify-center z-40 pointer-events-none">
-          <Heart className="w-24 h-24 text-red-500 fill-red-500 animate-ping drop-shadow-[0_0_20px_rgba(239,68,68,0.8)]" />
+          <Heart className="w-32 h-32 text-red-500 fill-red-500 animate-heart-pop drop-shadow-[0_0_30px_rgba(239,68,68,0.8)]" />
         </div>
       )}
 
-      {/* Top Header Overlays: Sound, Views, Settings, More */}
-      <div className="absolute top-4 left-4 right-4 z-30 flex items-center justify-between pointer-events-auto">
-        <div className="flex items-center gap-2">
-          {/* Sound Toggle Badge */}
-          <button 
-            onClick={() => setIsReelsMuted(!isReelsMuted)}
-            className="px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md text-white border border-white/20 flex items-center gap-2 text-xs font-semibold hover:bg-black/80 transition-all shadow-lg"
-          >
-            {isReelsMuted ? (
-              <>
-                <VolumeX className="w-3.5 h-3.5 text-red-400" />
-                <span>Muted</span>
-              </>
-            ) : (
-              <>
-                <Volume2 className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                <span>Sound On</span>
-              </>
-            )}
-          </button>
+      {/* Top Header Overlays: Removed per user request */}
 
-          {/* AI Content Label Badge */}
-          <div className="px-2.5 py-1 rounded-full bg-indigo-950/80 backdrop-blur-md text-indigo-300 border border-indigo-500/30 flex items-center gap-1 text-[10px] font-bold shadow">
-            <Sparkles className="w-3 h-3 text-indigo-400" />
-            <span>AI Content</span>
+
+      {/* Center Play/Pause & Rewind/Forward Controls (10s rewind, play/pause, 10s forward) */}
+      <div 
+        id={`reel-controls-overlay-${reelItem.id}`}
+        className={`absolute inset-0 flex items-center justify-center gap-7 z-20 transition-opacity duration-300 pointer-events-none ${
+          !isPlaying || showControls ? 'opacity-100' : 'opacity-0'
+        }`}
+      >
+        {/* LEFT/CENTER: 10-second rewind button */}
+        <button 
+          id={`reel-rewind-10-${reelItem.id}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleRewind();
+          }}
+          className="w-12 h-12 rounded-full bg-black/65 hover:bg-black/85 text-white backdrop-blur-md border border-white/25 flex flex-col items-center justify-center shadow-2xl transition-transform active:scale-90 pointer-events-auto"
+          title="Rewind 10 seconds"
+          aria-label="Rewind 10 seconds"
+        >
+          <div className="relative flex items-center justify-center w-6 h-6">
+            <RotateCcw className="w-5 h-5 text-white" />
+            <span className="absolute text-[8px] font-black top-1/2 left-1/2 -translate-x-1/2 -translate-y-[45%] text-white select-none">10</span>
           </div>
-        </div>
+        </button>
 
-        <div className="flex items-center gap-2">
-          {/* Views & Metrics Badge */}
-          <div className="px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md text-white border border-white/20 flex items-center gap-1.5 text-xs font-semibold shadow-lg">
-            <Eye className="w-3.5 h-3.5 text-indigo-400" />
-            <span>{(reelItem.views || 0).toLocaleString()} views</span>
+        {/* CENTER: Play/Pause button */}
+        <button 
+          id={`reel-play-pause-${reelItem.id}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            togglePlayPause();
+            triggerShowControls();
+          }}
+          className="w-14 h-14 rounded-full bg-black/70 hover:bg-black/90 text-white backdrop-blur-md border border-white/30 flex items-center justify-center shadow-2xl transition-transform active:scale-90 pointer-events-auto"
+          title={isPlaying ? "Pause" : "Play"}
+          aria-label={isPlaying ? "Pause" : "Play"}
+        >
+          {isPlaying ? (
+            <Pause className="w-7 h-7 fill-white text-white" />
+          ) : (
+            <Play className="w-7 h-7 fill-white text-white ml-0.5" />
+          )}
+        </button>
+
+        {/* RIGHT/CENTER: 10-second forward button */}
+        <button 
+          id={`reel-forward-10-${reelItem.id}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleForward();
+          }}
+          className="w-12 h-12 rounded-full bg-black/65 hover:bg-black/85 text-white backdrop-blur-md border border-white/25 flex flex-col items-center justify-center shadow-2xl transition-transform active:scale-90 pointer-events-auto"
+          title="Forward 10 seconds"
+          aria-label="Forward 10 seconds"
+        >
+          <div className="relative flex items-center justify-center w-6 h-6">
+            <RotateCw className="w-5 h-5 text-white" />
+            <span className="absolute text-[8px] font-black top-1/2 left-1/2 -translate-x-1/2 -translate-y-[45%] text-white select-none">10</span>
           </div>
-
-          {/* Playback Settings Button */}
-          <button 
-            onClick={() => setShowSettingsModal(true)}
-            className="p-2 rounded-full bg-black/60 backdrop-blur-md text-white border border-white/20 hover:bg-black/80 transition-all shadow"
-            title="Playback Settings"
-          >
-            <Settings className="w-4 h-4 text-zinc-300" />
-          </button>
-
-          {/* More (⋮) Menu Button */}
-          <button 
-            onClick={() => setShowMoreMenu(true)}
-            className="p-2 rounded-full bg-black/60 backdrop-blur-md text-white border border-white/20 hover:bg-black/80 transition-all shadow"
-            title="More Options"
-          >
-            <MoreVertical className="w-4 h-4 text-zinc-300" />
-          </button>
-        </div>
+        </button>
       </div>
-
-      {/* Center Play/Pause & Rewind/Forward Controls overlay on pause */}
-      {!isPlaying && (
-        <div className="absolute inset-0 flex items-center justify-center gap-6 z-20 bg-black/30 backdrop-blur-[2px] pointer-events-auto">
-          <button 
-            onClick={handleRewind}
-            className="p-3 rounded-full bg-black/60 text-white hover:bg-black/80 border border-white/20 shadow-xl transition-transform active:scale-95"
-            title="5-second rewind"
-          >
-            <RotateCcw className="w-6 h-6" />
-          </button>
-          <button 
-            onClick={togglePlayPause}
-            className="p-5 rounded-full bg-indigo-600 text-white hover:bg-indigo-500 shadow-2xl transition-transform active:scale-95 border border-indigo-400"
-            title="Play / Pause"
-          >
-            <Play className="w-8 h-8 fill-white ml-0.5" />
-          </button>
-          <button 
-            onClick={handleForward}
-            className="p-3 rounded-full bg-black/60 text-white hover:bg-black/80 border border-white/20 shadow-xl transition-transform active:scale-95"
-            title="5-second forward"
-          >
-            <RotateCw className="w-6 h-6" />
-          </button>
-        </div>
+      {!isClearMode && (
+        <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80 z-10 pointer-events-none" />
       )}
+      {/* Left Bottom Details Overlay: Creator Information */}
+      {!isClearMode && (
+        <div className="relative z-20 space-y-2.5 max-w-[76%] pointer-events-auto">
 
-      {/* Gradient Overlay */}
-      <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80 z-10 pointer-events-none" />
-
-      {/* Left Bottom Details Overlay */}
-      <div className="relative z-20 space-y-2.5 max-w-[78%] pointer-events-auto">
         <div className="flex items-center gap-3">
+          {/* User Profile Photo */}
           <div 
             onClick={onProfileClick} 
             className="w-10 h-10 rounded-full overflow-hidden border-2 border-indigo-500 shadow cursor-pointer hover:opacity-80 flex-shrink-0"
+            title={`View @${reelItem.author || 'creator'}'s profile`}
           >
             <Image width={100} height={100} referrerPolicy="no-referrer" src={reelItem.avatar || "https://picsum.photos/seed/user/100/100"} alt="Reel Author" className="w-full h-full object-cover" />
           </div>
-          <div>
+
+          {/* User/Profile Name + Public/Globe Indicator */}
+          <div className="min-w-0">
             <div 
               onClick={onProfileClick} 
               className="font-bold text-sm tracking-tight drop-shadow cursor-pointer hover:underline flex items-center gap-1.5"
             >
-              <span>@{reelItem.author || 'creator'}</span>
+              <span className="truncate">@{reelItem.author || 'creator'}</span>
               {reelItem.is_verified && <span className="text-indigo-400 text-xs">✓</span>}
             </div>
+            <div className="flex items-center gap-1.5 text-[11px] text-zinc-300">
+              <span>{reelItem.created_at ? new Date(reelItem.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'Recent'}</span>
+              <span>•</span>
+              <span title="Public" className="inline-flex items-center">
+                <Globe className="w-3 h-3 text-zinc-300 inline" />
+              </span>
+            </div>
           </div>
+
+          {/* Follow Button */}
           {reelItem.user_id !== user?.id && (
             <button 
               onClick={onFollowClick}
-              className={`px-3 py-1 rounded-full text-xs font-bold transition-all shadow ${
+              className={`px-3 py-1 rounded-full text-xs font-bold transition-all shadow shrink-0 ${
                 isFollowing 
                   ? 'bg-zinc-800 text-zinc-300 border border-zinc-700' 
                   : 'bg-indigo-600 hover:bg-indigo-500 text-white'
@@ -617,7 +655,7 @@ export function ReelCardItem({
           )}
         </div>
 
-        {/* Caption with Show More / Show Less */}
+        {/* Title / Caption / Description with Show More / Show Less */}
         <div className="text-xs sm:text-sm text-zinc-100 leading-snug drop-space">
           <p className={`${captionExpanded ? '' : 'line-clamp-2'}`}>
             {reelItem.caption || reelItem.content || 'Trending R.mix Reel'}
@@ -651,80 +689,107 @@ export function ReelCardItem({
           </div>
         </div>
       </div>
+      )}
 
-      {/* Right Sidebar Interactive Actions */}
-      <div className="absolute right-3 bottom-12 z-20 flex flex-col items-center gap-4 pointer-events-auto">
-        
-        {/* Play/Pause Button */}
-        <button 
-          onClick={togglePlayPause}
-          className="flex flex-col items-center group"
-          title={isPlaying ? "Pause" : "Play"}
-        >
-          <div className="p-3 rounded-full bg-black/50 backdrop-blur-md border border-white/10 group-hover:bg-black/80 transition-colors text-white">
-            {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 fill-white" />}
-          </div>
-          <span className="text-[10px] font-bold mt-1 drop-shadow">
-            {isPlaying ? "Pause" : "Play"}
-          </span>
-        </button>
+      {/* Right Sidebar Interactive Actions: 1. Like, 2. Comment, 3. Share, 4. Save, 5. Three-dot menu */}
+      <div className="absolute right-3 bottom-12 z-20 flex flex-col items-center gap-3.5 pointer-events-auto">
+        {!isClearMode && (
+          <>
 
-        {/* Like */}
+        {/* 1. Like */}
         <button 
+          id={`reel-like-btn-${reelItem.id}`}
           onClick={onLikeClick}
           className="flex flex-col items-center group"
+          title="Like"
+          aria-label="Like"
         >
-          <div className="p-3 rounded-full bg-black/50 backdrop-blur-md border border-white/10 group-hover:bg-black/80 transition-colors">
-            <Heart className={`w-6 h-6 transition-transform group-active:scale-125 ${reelItem.isLiked ? 'fill-red-500 text-red-500' : 'text-white'}`} />
+          <div className="w-10 h-10 rounded-full bg-black/55 backdrop-blur-md border border-white/15 flex items-center justify-center group-hover:bg-black/80 transition-all shadow-lg">
+            <Heart className={`w-5 h-5 transition-transform group-active:scale-125 ${reelItem.isLiked ? 'fill-red-500 text-red-500' : 'text-white'}`} />
           </div>
-          <span className="text-[11px] font-bold mt-1 drop-shadow">
+          <span className="text-[11px] font-bold mt-1 drop-shadow text-white">
             {(reelItem.likes || 0).toLocaleString()}
           </span>
         </button>
 
-        {/* Comment */}
+        {/* 2. Comment */}
         <button 
+          id={`reel-comment-btn-${reelItem.id}`}
           onClick={() => setShowCommentDrawer(true)}
           className="flex flex-col items-center group"
+          title="Comment"
+          aria-label="Comment"
         >
-          <div className="p-3 rounded-full bg-black/50 backdrop-blur-md border border-white/10 group-hover:bg-black/80 transition-colors">
-            <MessageCircle className="w-6 h-6 text-white" />
+          <div className="w-10 h-10 rounded-full bg-black/55 backdrop-blur-md border border-white/15 flex items-center justify-center group-hover:bg-black/80 transition-all shadow-lg">
+            <MessageCircle className="w-5 h-5 text-white" />
           </div>
-          <span className="text-[11px] font-bold mt-1 drop-shadow">
+          <span className="text-[11px] font-bold mt-1 drop-shadow text-white">
             {comments.length || reelItem.commentsCount || 0}
           </span>
         </button>
 
-        {/* Share */}
+        {/* 3. Share */}
         <button 
+          id={`reel-share-btn-${reelItem.id}`}
           onClick={onShareClick}
           className="flex flex-col items-center group"
+          title="Share"
+          aria-label="Share"
         >
-          <div className="p-3 rounded-full bg-black/50 backdrop-blur-md border border-white/10 group-hover:bg-black/80 transition-colors">
-            <Share2 className="w-6 h-6 text-white" />
+          <div className="w-10 h-10 rounded-full bg-black/55 backdrop-blur-md border border-white/15 flex items-center justify-center group-hover:bg-black/80 transition-all shadow-lg">
+            <Share2 className="w-5 h-5 text-white" />
           </div>
-          <span className="text-[11px] font-bold mt-1 drop-shadow">
+          <span className="text-[11px] font-bold mt-1 drop-shadow text-white">
             Share
           </span>
         </button>
 
-        {/* Save */}
+        {/* 3.5 Views */}
+        <div 
+          className="flex flex-col items-center group"
+          title="Views"
+        >
+          <div className="w-10 h-10 rounded-full bg-black/55 backdrop-blur-md border border-white/15 flex items-center justify-center shadow-lg">
+            <Eye className="w-5 h-5 text-white" />
+          </div>
+          <span className="text-[11px] font-bold mt-1 drop-shadow text-white">
+            {reelItem.views || 0}
+          </span>
+        </div>
+
+        {/* 4. Save */}
         <button 
+          id={`reel-save-btn-${reelItem.id}`}
           onClick={onBookmarkClick}
           className="flex flex-col items-center group"
+          title="Save"
+          aria-label="Save"
         >
-          <div className="p-3 rounded-full bg-black/50 backdrop-blur-md border border-white/10 group-hover:bg-black/80 transition-colors">
-            <Bookmark className={`w-6 h-6 transition-colors ${reelItem.isBookmarked ? 'fill-white text-white' : 'text-white'}`} />
+          <div className="w-10 h-10 rounded-full bg-black/55 backdrop-blur-md border border-white/15 flex items-center justify-center group-hover:bg-black/80 transition-all shadow-lg">
+            <Bookmark className={`w-5 h-5 transition-colors ${reelItem.isBookmarked ? 'fill-white text-white' : 'text-white'}`} />
           </div>
-          <span className="text-[11px] font-bold mt-1 drop-shadow">
+          <span className="text-[11px] font-bold mt-1 drop-shadow text-white">
             Save
           </span>
         </button>
+          </>
+        )}
 
-        {/* Music Spinning Disc */}
-        <div className="w-9 h-9 rounded-full bg-zinc-900 border-2 border-indigo-400 overflow-hidden flex items-center justify-center animate-spin mt-1 shadow-lg" style={{ animationDuration: '6s' }}>
-          <Music className="w-4 h-4 text-indigo-400" />
-        </div>
+        {/* 5. Three-dot menu */}
+        <button 
+          id={`reel-more-btn-${reelItem.id}`}
+          onClick={() => setShowMoreMenu(true)}
+          className="flex flex-col items-center group"
+          title="More options"
+          aria-label="More options"
+        >
+          <div className="w-10 h-10 rounded-full bg-black/55 backdrop-blur-md border border-white/15 flex items-center justify-center group-hover:bg-black/80 transition-all shadow-lg text-white">
+            <MoreHorizontal className="w-5 h-5" />
+          </div>
+          <span className="text-[11px] font-bold mt-1 drop-shadow text-white">
+            More
+          </span>
+        </button>
 
       </div>
 
@@ -829,126 +894,265 @@ export function ReelCardItem({
 
       {/* 2. More (⋮) Options Menu Modal */}
       {showMoreMenu && (
-        <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto">
-          <div className="bg-zinc-950 border border-zinc-800 rounded-2xl w-full max-w-xs p-3 space-y-1 shadow-2xl overflow-hidden max-h-[85vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5 px-2">
-              <h4 className="font-bold text-sm text-white">Reel Options</h4>
-              <button onClick={() => setShowMoreMenu(false)} className="text-zinc-400 hover:text-white">
+        <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto" onClick={() => { setShowMoreMenu(false); setMoreSubmenu('none'); }}>
+          <div className="bg-zinc-950 border border-zinc-800 rounded-2xl w-full max-w-xs p-3 shadow-2xl overflow-hidden max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-2.5 px-2 mb-2">
+              <h4 className="font-bold text-sm text-white">
+                {moreSubmenu === 'playback' ? 'Playback speed' : moreSubmenu === 'quality' ? 'Quality settings' : 'Reel Options'}
+              </h4>
+              <button onClick={() => { setShowMoreMenu(false); setMoreSubmenu('none'); }} className="text-zinc-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-0.5 pt-1">
-              <button 
-                onClick={() => { setShowMoreMenu(false); handleDownloadReel(); }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-zinc-200 transition-colors"
-              >
-                <Download className="w-4 h-4 text-indigo-400" />
-                <span>Download Reel</span>
-              </button>
+            {moreSubmenu === 'none' && (
+              <div className="space-y-0.5">
+                {/* 1. Interested */}
+                <button 
+                  onClick={() => {
+                    setShowMoreMenu(false);
+                    trackEngagementEvent(supabase, {
+                      user_id: user?.id,
+                      post_id: reelItem.id,
+                      event_type: 'like'
+                    });
+                    triggerToast("More of your reels will be like this.");
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-zinc-200 transition-colors"
+                >
+                  <Smile className="w-4 h-4 text-emerald-400" />
+                  <div className="flex flex-col items-start">
+                    <span>Interested</span>
+                    <span className="text-[9px] text-zinc-500 font-normal">More of your reels will be like this.</span>
+                  </div>
+                </button>
 
-              <button 
-                onClick={() => { setShowMoreMenu(false); handleRemixThisReel(); }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-zinc-200 transition-colors"
-              >
-                <Repeat className="w-4 h-4 text-emerald-400" />
-                <span>Remix This Reel</span>
-              </button>
+                {/* 2. Not interested */}
+                <button 
+                  onClick={() => {
+                    setShowMoreMenu(false);
+                    trackEngagementEvent(supabase, {
+                      user_id: user?.id,
+                      post_id: reelItem.id,
+                      event_type: 'hide'
+                    });
+                    triggerToast("Less of your reels will be like this.");
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-zinc-200 transition-colors"
+                >
+                  <UserX className="w-4 h-4 text-orange-400" />
+                  <div className="flex flex-col items-start">
+                    <span>Not interested</span>
+                    <span className="text-[9px] text-zinc-500 font-normal">Less of your reels will be like this.</span>
+                  </div>
+                </button>
+                
+                <div className="h-px bg-zinc-800 my-1 mx-2" />
 
-              <button 
-                onClick={() => { setShowMoreMenu(false); setShowTranscriptModal(true); }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-zinc-200 transition-colors"
-              >
-                <FileText className="w-4 h-4 text-sky-400" />
-                <span>Transcript</span>
-              </button>
+                {/* 3. Playback speed */}
+                <button 
+                  onClick={() => setMoreSubmenu('playback')}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-zinc-200 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <Play className="w-4 h-4 text-zinc-400" />
+                    <span>Playback speed</span>
+                  </div>
+                  <span className="text-zinc-500">{playbackSpeed}x</span>
+                </button>
 
-              <button 
-                onClick={() => { setShowMoreMenu(false); setShowAudioLangModal(true); }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-zinc-200 transition-colors"
-              >
-                <Globe className="w-4 h-4 text-amber-400" />
-                <span>Audio & Language</span>
-              </button>
+                {/* 4. Quality settings */}
+                <button 
+                  onClick={() => setMoreSubmenu('quality')}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-zinc-200 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <Settings className="w-4 h-4 text-zinc-400" />
+                    <span>Quality settings</span>
+                  </div>
+                  <span className="text-zinc-500">Auto</span>
+                </button>
 
-              <button 
-                onClick={() => { setShowMoreMenu(false); setShowWhyThisModal(true); }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-zinc-200 transition-colors"
-              >
-                <HelpCircle className="w-4 h-4 text-purple-400" />
-                <span>Why am I seeing this video</span>
-              </button>
+                {/* 5. Captions */}
+                <button 
+                  onClick={() => {
+                    if (reelItem.has_captions) {
+                      setShowCaptions(!showCaptions);
+                      triggerToast(showCaptions ? "Captions disabled" : "Captions enabled");
+                    } else {
+                      triggerToast("Captions are unavailable for this reel");
+                    }
+                    setShowMoreMenu(false);
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-zinc-200 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <MessageCircle className="w-4 h-4 text-zinc-400" />
+                    <span>Captions</span>
+                  </div>
+                  <span className="text-zinc-500">{reelItem.has_captions ? (showCaptions ? 'On' : 'Off') : 'Unavailable'}</span>
+                </button>
 
-              <button 
-                onClick={() => { setShowMoreMenu(false); setShowRateModal(true); }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-zinc-200 transition-colors"
-              >
-                <Star className="w-4 h-4 text-yellow-400" />
-                <span>Rate playback experience</span>
-              </button>
+                {/* 6. Clear mode */}
+                <button 
+                  onClick={() => {
+                    setIsClearMode(true);
+                    setShowMoreMenu(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-zinc-200 transition-colors"
+                >
+                  <Eye className="w-4 h-4 text-zinc-400" />
+                  <span>Clear mode</span>
+                </button>
 
-              {!isOwner && (
-                <>
-                  <div className="border-t border-zinc-800 my-1 pt-1" />
+                <div className="h-px bg-zinc-800 my-1 mx-2" />
+
+                {/* 7. Scroll to next reel automatically */}
+                <button 
+                  onClick={() => setAutoNext(!autoNext)}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-zinc-200 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <RotateCw className="w-4 h-4 text-zinc-400" />
+                    <span>Scroll to next reel automatically</span>
+                  </div>
+                  <div className={`w-8 h-4 rounded-full flex items-center px-0.5 transition-colors ${autoNext ? 'bg-indigo-500' : 'bg-zinc-700'}`}>
+                    <div className={`w-3 h-3 bg-white rounded-full transition-transform ${autoNext ? 'translate-x-4' : 'translate-x-0'}`} />
+                  </div>
+                </button>
+
+                {/* 8. Transcript */}
+                <button 
+                  onClick={() => {
+                    setShowMoreMenu(false);
+                    setShowTranscriptModal(true);
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-zinc-200 transition-colors"
+                >
+                  <FileText className="w-4 h-4 text-zinc-400" />
+                  <span>Transcript</span>
+                </button>
+
+                {/* 9. Audio and language */}
+                <button 
+                  onClick={() => {
+                    setShowMoreMenu(false);
+                    setShowAudioLangModal(true);
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-zinc-200 transition-colors"
+                >
+                  <Globe className="w-4 h-4 text-zinc-400" />
+                  <span>Audio and language</span>
+                </button>
+
+                <div className="h-px bg-zinc-800 my-1 mx-2" />
+
+                {/* 10. Save reel */}
+                <button 
+                  onClick={() => {
+                    onBookmarkClick();
+                    setShowMoreMenu(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-zinc-200 transition-colors"
+                >
+                  <Bookmark className={`w-4 h-4 ${reelItem.isBookmarked ? 'fill-indigo-400 text-indigo-400' : 'text-zinc-400'}`} />
+                  <div className="flex flex-col items-start">
+                    <span>{reelItem.isBookmarked ? 'Unsave reel' : 'Save reel'}</span>
+                    <span className="text-[9px] text-zinc-500 font-normal">Add this to your saved reels.</span>
+                  </div>
+                </button>
+
+                {/* 11. Copy link */}
+                <button 
+                  onClick={() => {
+                    navigator.clipboard.writeText(`${window.location.origin}/reel/${reelItem.id}`);
+                    triggerToast("Link copied to clipboard");
+                    setShowMoreMenu(false);
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-zinc-200 transition-colors"
+                >
+                  <Share2 className="w-4 h-4 text-zinc-400" />
+                  <span>Copy link</span>
+                </button>
+
+                {/* 12. Find support or report reel */}
+                <button 
+                  onClick={() => {
+                    setShowMoreMenu(false);
+                    trackEngagementEvent(supabase, {
+                      user_id: user?.id,
+                      post_id: reelItem.id,
+                      event_type: 'report'
+                    });
+                    triggerToast("Report submitted successfully.");
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-zinc-200 transition-colors"
+                >
+                  <Shield className="w-4 h-4 text-zinc-400" />
+                  <div className="flex flex-col items-start">
+                    <span>Find support or report reel</span>
+                    <span className="text-[9px] text-zinc-500 font-normal">I&apos;m concerned about this reel.</span>
+                  </div>
+                </button>
+
+                <div className="h-px bg-zinc-800 my-1 mx-2" />
+
+                {/* 13. Why am I seeing this reel? */}
+                <button 
+                  onClick={() => {
+                    setShowMoreMenu(false);
+                    setShowWhyThisModal(true);
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-zinc-200 transition-colors"
+                >
+                  <HelpCircle className="w-4 h-4 text-zinc-400" />
+                  <span>Why am I seeing this reel?</span>
+                </button>
+
+                {/* 14. Something went wrong */}
+                <button 
+                  onClick={() => {
+                    setShowMoreMenu(false);
+                    triggerToast("Error reported. Thank you for your feedback.");
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-zinc-200 transition-colors"
+                >
+                  <AlertTriangle className="w-4 h-4 text-zinc-400" />
+                  <span>Something went wrong</span>
+                </button>
+              </div>
+            )}
+
+            {moreSubmenu === 'playback' && (
+              <div className="space-y-1">
+                <button onClick={() => setMoreSubmenu('none')} className="w-full text-left px-2 py-1 text-xs text-zinc-400 mb-2 font-bold hover:text-white">← Back</button>
+                {[0.5, 1, 1.5, 2].map(speed => (
                   <button 
+                    key={speed}
                     onClick={() => {
-                      setShowMoreMenu(false);
-                      trackEngagementEvent(supabase, {
-                        user_id: user?.id,
-                        post_id: reelItem.id,
-                        event_type: 'hide'
-                      });
-                      triggerToast("Marked as 'Not Interested'.");
+                      setPlaybackSpeed(speed);
+                      setMoreSubmenu('none');
                     }}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-orange-400 transition-colors"
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold transition-colors ${playbackSpeed === speed ? 'text-indigo-400 bg-indigo-500/10' : 'text-zinc-200'}`}
                   >
-                    <UserX className="w-4 h-4" />
-                    <span>Not Interested</span>
+                    <span>{speed}x</span>
+                    {playbackSpeed === speed && <Check className="w-4 h-4" />}
                   </button>
+                ))}
+              </div>
+            )}
 
-                  <button 
-                    onClick={() => {
-                      setShowMoreMenu(false);
-                      trackEngagementEvent(supabase, {
-                        user_id: user?.id,
-                        post_id: reelItem.id,
-                        event_type: 'report'
-                      });
-                      triggerToast("Reel reported successfully.");
-                    }}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-red-500/10 text-xs font-semibold text-red-400 transition-colors"
-                  >
-                    <Shield className="w-4 h-4 text-red-500" />
-                    <span>Report Reel</span>
-                  </button>
-                </>
-              )}
-
-              {isOwner && (
-                <>
-                  <div className="border-t border-zinc-800 my-1 pt-1" />
-                  <button 
-                    onClick={() => { setShowMoreMenu(false); setShowEditModal(true); }}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold text-indigo-400 transition-colors"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                    <span>Edit Reel (Owner)</span>
-                  </button>
-
-                  <button 
-                    onClick={() => { setShowMoreMenu(false); handleDeleteThisReel(); }}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-red-500/10 text-xs font-semibold text-red-400 transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    <span>Delete Reel (Owner)</span>
-                  </button>
-                </>
-              )}
-            </div>
+            {moreSubmenu === 'quality' && (
+              <div className="space-y-1">
+                <button onClick={() => setMoreSubmenu('none')} className="w-full text-left px-2 py-1 text-xs text-zinc-400 mb-2 font-bold hover:text-white">← Back</button>
+                <div className="px-3 py-4 text-center text-xs text-zinc-400">
+                  <p>Quality settings are not supported for this source.</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
-
       {/* 3. Transcript Modal */}
       {showTranscriptModal && (
         <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 pointer-events-auto">
@@ -963,9 +1167,11 @@ export function ReelCardItem({
               </button>
             </div>
             <div className="max-h-60 overflow-y-auto space-y-2 text-xs text-zinc-300 leading-relaxed bg-zinc-900/60 p-3 rounded-xl border border-zinc-800">
-              <p className="font-mono text-[11px] text-indigo-400">[00:00] Welcome to R.mix Reels experience.</p>
-              <p className="font-mono text-[11px] text-zinc-300">[00:03] {reelItem.caption || reelItem.content || 'Showing high quality trending video content.'}</p>
-              <p className="font-mono text-[11px] text-indigo-400">[00:15] End of automated transcript segment.</p>
+              {reelItem.transcript ? (
+                <p className="font-mono text-[11px] text-zinc-300">{reelItem.transcript}</p>
+              ) : (
+                <p className="font-mono text-[11px] text-zinc-300">The creator has not uploaded a transcript for this reel</p>
+              )}
             </div>
             <button onClick={() => setShowTranscriptModal(false)} className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-bold text-xs text-white">
               Close Transcript
@@ -994,16 +1200,11 @@ export function ReelCardItem({
               </div>
               <div>
                 <label className="font-bold text-white block mb-1">Audio Language</label>
-                <select className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-white text-xs">
-                  <option>English (Original)</option>
-                  <option>Spanish (Auto-Dub)</option>
-                  <option>French (Auto-Dub)</option>
-                  <option>Hindi (Auto-Dub)</option>
-                </select>
+                <div className="w-full px-3 py-4 text-center rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 text-xs">Alternative audio tracks are unavailable for this reel.</div>
               </div>
             </div>
-            <button onClick={() => { setShowAudioLangModal(false); triggerToast("Audio settings updated!"); }} className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-bold text-xs text-white">
-              Save Preferences
+            <button onClick={() => { setShowAudioLangModal(false); }} className="w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 font-bold text-xs text-white">
+              Close
             </button>
           </div>
         </div>

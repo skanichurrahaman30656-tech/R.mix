@@ -1,9 +1,11 @@
 "use client";
+import dynamic from "next/dynamic";
 import { ReelCardItem } from './reels/ReelCardItem';
 import AdUnit from './shared/AdUnit';
 import Image from "next/image";
 import { VideoPlayer } from "./shared/VideoPlayer";
-import { StoryViewer } from "./story/StoryViewer";
+import { MainMenuPanel } from "./shared/MainMenuPanel";
+const StoryViewer = dynamic(() => import('./story/StoryViewer').then(mod => mod.StoryViewer), { ssr: false });
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -16,22 +18,32 @@ import {
   FileText, Music, UserPlus, Flame, Sparkles, Clock, X, Play, Radio, 
   Volume2, VolumeX, User, ArrowUpRight, BarChart3,
   Link as LinkIcon, MapPin, CheckCircle2, DollarSign, Star, Award, 
-  Zap, Briefcase, Send, ShieldCheck, CreditCard, Lightbulb
+  Zap, Briefcase, Send, ShieldCheck, ShieldAlert, CreditCard, Lightbulb,
+  Menu, Plus
 } from 'lucide-react';
 
-import CreatePostModal from './shared/CreatePostModal';
-import { FeedPage } from './feed/FeedPage';
-import { SearchPage } from './search/SearchPage';
-import { ReelsPage } from './reels/ReelsPage';
-import { LivePage } from './live/LivePage';
-import EditProfileModal from './shared/EditProfileModal';
-import { motion } from 'motion/react';
-import { SettingsSystem } from "./settings/SettingsSystem";
+const CreatePostModal = dynamic(() => import('./shared/CreatePostModal'), { ssr: false });
+const CopyrightManagementSection = dynamic(() => import('./CopyrightManagementSection').then(mod => mod.CopyrightManagementSection), { ssr: false });
+const FeedPage = dynamic(() => import('./feed/FeedPage').then(mod => mod.FeedPage), { ssr: false });
+const SearchPage = dynamic(() => import('./search/SearchPage').then(mod => mod.SearchPage), { ssr: false });
+const ReelsPage = dynamic(() => import('./reels/ReelsPage').then(mod => mod.ReelsPage), { ssr: false });
+const LivePage = dynamic(() => import('./live/LivePage').then(mod => mod.LivePage), { ssr: false });
+const EditProfileModal = dynamic(() => import('./shared/EditProfileModal'), { ssr: false });
+
+const SettingsSystem = dynamic(() => import('./settings/SettingsSystem').then(mod => mod.SettingsSystem), { ssr: false });
 import { compressImage } from '@/lib/compress';
 import { rankAndPersonalizePosts, trackEngagementEvent } from '@/lib/recommendations';
 
 
-export default function MainDashboardClient() {
+interface MainDashboardClientProps {
+  initialViewMode?: 'feed' | 'reels' | 'profile' | 'settings' | 'search' | 'live';
+  initialProfileUserId?: string;
+}
+
+export default function MainDashboardClient({
+  initialViewMode = 'feed',
+  initialProfileUserId,
+}: MainDashboardClientProps = {}) {
   const router = useRouter();
   const [posts, setPosts] = useState<any[]>([]);
   const postsRef = useRef(posts);
@@ -41,7 +53,7 @@ export default function MainDashboardClient() {
   useEffect(() => { pageRef.current = page; }, [page]);
   const [hasMorePosts, setHasMorePosts] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const POSTS_LIMIT = 1000;
+  const POSTS_LIMIT = 5;
   const [stories, setStories] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [sharePostId, setSharePostId] = useState<string | null>(null);
@@ -76,9 +88,11 @@ export default function MainDashboardClient() {
 
   const [loading, setLoading] = useState(true);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [viewMode, setViewMode] = useState<'feed' | 'reels' | 'profile' | 'settings' | 'search' | 'live'>('feed');
+  const [showMainMenu, setShowMainMenu] = useState(false);
+  const [viewMode, setViewMode] = useState<'feed' | 'reels' | 'profile' | 'settings' | 'search' | 'live'>(initialViewMode);
   useEffect(() => { window.scrollTo(0, 0); }, [viewMode]);
-  const [profileTab, setProfileTab] = useState<'posts' | 'reels' | 'photos' | 'videos'>('posts');
+  const [profileTab, setProfileTab] = useState<'posts' | 'reels' | 'photos' | 'videos' | 'copyright'>('posts');
+  const [showProfileReelsViewer, setShowProfileReelsViewer] = useState(false);
   const [dashboardTab, setDashboardTab] = useState<'overview' | 'analytics' | 'content' | 'audience' | 'engagement' | 'monetization' | 'recommendations'>('overview');
   const [activeSettingToast, setActiveSettingToast] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
@@ -99,7 +113,7 @@ export default function MainDashboardClient() {
   const [viewedReelIds, setViewedReelIds] = useState<Record<string, boolean>>({});
   const [activeReelId, setActiveReelId] = useState<string | null>(null);
   const [viewingProfileUser, setViewingProfileUser] = useState<any>(null);
-  const [viewingProfileStats, setViewingProfileStats] = useState<{ followers: number; following: number }>({ followers: 0, following: 0 });
+  const [viewingProfileStats, setViewingProfileStats] = useState<{ followers: number; following: number; views?: number; reach?: number; engagement?: number }>({ followers: 0, following: 0 });
   const [selectedProfilePost, setSelectedProfilePost] = useState<any>(null);
   const [isEditingPostModal, setIsEditingPostModal] = useState(false);
   const [editPostCaption, setEditPostCaption] = useState('');
@@ -136,7 +150,7 @@ export default function MainDashboardClient() {
         setTotalLiveViewersCount(totalViewers);
       }
     } catch (err) {
-      console.error('Error fetching live stats for dashboard:', err);
+      console.warn('Error fetching live stats for dashboard:', err);
     }
   };
 
@@ -195,7 +209,7 @@ export default function MainDashboardClient() {
           }
         }
       } catch (err) {
-        console.error('Error loading viral tab data:', err);
+        console.warn('Error loading viral tab data:', err);
       } finally {
         setLoadingViralTab(false);
       }
@@ -256,7 +270,7 @@ export default function MainDashboardClient() {
       setPosts(prev => prev.filter(p => p.id !== postId));
       setSelectedProfilePost(null);
     } catch (err) {
-      console.error('Error deleting post:', err);
+      console.warn('Error deleting post:', err);
     }
   };
 
@@ -273,7 +287,7 @@ export default function MainDashboardClient() {
       setSelectedProfilePost((prev: any) => prev ? { ...prev, caption: editPostCaption } : null);
       setIsEditingPostModal(false);
     } catch (err) {
-      console.error('Error updating post:', err);
+      console.warn('Error updating post:', err);
     }
   };
   
@@ -294,18 +308,104 @@ export default function MainDashboardClient() {
     );
     if (loadMoreRef.current) observer.observe(loadMoreRef.current);
     return () => observer.disconnect();
+  
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasMorePosts, isLoadingMore, loading, user]);
+
 
   
   const handleStoryClick = (storyId: string) => {
     const idx = stories.findIndex((s: any) => s.id === storyId);
     if (idx !== -1) setSelectedStoryIndex(idx);
   };
+  
+  const fetchProfilePosts = async (targetUid: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .select(`
+          *,
+          profiles:user_id ( id, username, full_name, avatar_url ),
+          likes ( user_id ),
+          comments ( id, content, created_at, profiles:user_id ( id, username, avatar_url ) ),
+          saved_posts ( user_id ),
+          post_views ( id )
+        `)
+        .eq('user_id', targetUid)
+        .order('created_at', { ascending: false });
+
+      if (data) {
+        const formattedPosts = data.map((p: any) => {
+          let mediaList: string[] = [];
+          if (p.media_url) {
+            if (Array.isArray(p.media_url)) {
+              mediaList = p.media_url;
+            } else if (typeof p.media_url === 'string') {
+              try {
+                const parsed = JSON.parse(p.media_url);
+                if (Array.isArray(parsed)) mediaList = parsed;
+                else if (typeof parsed === 'string') mediaList = [parsed];
+              } catch {
+                mediaList = [p.media_url];
+              }
+            }
+          }
+          const likesCount = Array.isArray(p.likes) ? p.likes.length : 0;
+          const commentsCount = Array.isArray(p.comments) ? p.comments.length : 0;
+          const prof = Array.isArray(p.profiles) ? p.profiles[0] : p.profiles;
+          return {
+            id: p.id,
+            author: prof?.username || prof?.full_name || `user_${(p.user_id || "").substring(0, 8)}`,
+            handle: `@${prof?.username || 'user'}`,
+            avatar: prof?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp',
+            image: mediaList[0] || null,
+            video_url: p.video_url,
+            media_url: p.media_url,
+            image_url: p.image_url,
+            media_urls: mediaList,
+            type: p.media_type || p.type || (p.video_url || (mediaList[0] && mediaList[0].match(/\.(mp4|webm|mov|ogg)$/i)) ? 'video' : (p.image_url || (mediaList[0] && mediaList[0].match(/\.(png|jpe?g|gif|webp)$/i)) ? 'image' : null)),
+            likes: likesCount,
+            comments: Array.isArray(p.comments) ? p.comments : [],
+            commentsCount: commentsCount,
+            caption: p.content,
+            views: Array.isArray(p.post_views) ? p.post_views.length : 0,
+            savesCount: Array.isArray(p.saved_posts) ? p.saved_posts.length : 0,
+            post_views: Array.isArray(p.post_views) ? p.post_views : [],
+            isLiked: user?.id && Array.isArray(p.likes) ? p.likes.some((l: any) => l.user_id === user?.id) : false,
+            isBookmarked: user?.id && Array.isArray(p.saved_posts) ? p.saved_posts.some((s: any) => s.user_id === user?.id) : false,
+            showComments: false,
+            newComment: '',
+            user_id: p.user_id,
+            created_at: p.created_at
+          };
+        });
+
+        setPosts(prev => {
+          const newPosts = [...prev];
+          formattedPosts.forEach(fp => {
+            if (!newPosts.find(np => np.id === fp.id)) {
+              newPosts.push(fp);
+            }
+          });
+          return newPosts;
+        });
+      }
+    } catch (err) {
+      console.warn("Error fetching profile posts:", err);
+    }
+  };
+
+  const openMyProfile = () => {
+    if (user?.id) fetchProfilePosts(user.id);
+    setViewingProfileUser(null);
+    setViewingProfileStats({ followers: 0, following: 0 });
+    setViewMode('profile');
+  };
+
   const openUserProfile = async (targetUserId: string) => {
     if (!targetUserId) return;
     if (targetUserId === user?.id) {
-      setViewingProfileUser(null);
-      setViewMode('profile');
+      openMyProfile();
       return;
     }
 
@@ -326,16 +426,46 @@ export default function MainDashboardClient() {
         .select('*', { count: 'exact', head: true })
         .eq('follower_id', targetUserId);
 
-      setViewingProfileUser(targetProf || null);
+      // Fetch user's post stats for total views, reach, and engagement
+      const { data: postStats } = await supabase
+        .from('posts')
+        .select('likes(user_id), comments(id), post_views(id, user_id)')
+        .eq('user_id', targetUserId);
+      
+      let tViews = 0, tLikes = 0, tComments = 0;
+      let reachSet = new Set();
+      if (postStats) {
+        postStats.forEach((p: any) => {
+          tViews += (Array.isArray(p.post_views) ? p.post_views.length : 0);
+          tLikes += (p.likes?.length || 0);
+          tComments += (p.comments?.length || 0);
+          (p.post_views || []).forEach((v: any) => reachSet.add(v.user_id));
+        });
+      }
+      const reach = reachSet.size;
+      const engagement = tViews > 0 ? ((tLikes + tComments) / tViews) * 100 : 0;
+
+      setViewingProfileUser(targetProf || { id: targetUserId, username: `user_${targetUserId.substring(0, 8)}`, full_name: 'Creator' });
       setViewingProfileStats({
         followers: fCount || 0,
-        following: ingCount || 0
+        following: ingCount || 0,
+        views: tViews,
+        reach: reach,
+        engagement: Math.min(engagement, 100)
       });
       setViewMode('profile');
+      fetchProfilePosts(targetUserId);
     } catch (err) {
-      console.error('Error opening user profile:', err);
+      console.warn('Error opening user profile:', err);
     }
   };
+
+  useEffect(() => {
+    if (initialProfileUserId) {
+      openUserProfile(initialProfileUserId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialProfileUserId]);
 
   // Load persistent recent searches from localStorage on mount
   useEffect(() => {
@@ -449,7 +579,7 @@ export default function MainDashboardClient() {
     }
     const { data, error } = await query.limit(6);
 
-    if (error) console.error('Error fetching suggested users:', error);
+    if (error) console.warn('Error fetching suggested users:', error);
     if (data) {
       setSuggestedUsers(data);
     }
@@ -522,7 +652,7 @@ export default function MainDashboardClient() {
     try {
       const { data, error } = await supabase
         .from('posts')
-        .select('id, user_id, likes(user_id), comments(id), saved_posts(user_id), post_views(user_id)')
+        .select('id, user_id, likes(user_id), comments(id), saved_posts(user_id), post_views(id, user_id)')
         .eq('user_id', uid);
       if (error) throw error;
       
@@ -548,7 +678,7 @@ export default function MainDashboardClient() {
         reach: reachSet.size
       });
     } catch (err) {
-      console.error("Dashboard Stats Error:", err);
+      console.warn("Dashboard Stats Error:", err);
     }
   };
   
@@ -567,13 +697,14 @@ export default function MainDashboardClient() {
         profiles:user_id ( id, username, full_name, avatar_url ),
         likes ( user_id ),
         comments ( id, content, created_at, profiles:user_id ( id, username, avatar_url ) ),
-        saved_posts ( user_id )
+        saved_posts ( user_id ),
+        post_views ( id )
       `)
       .order('created_at', { ascending: false })
       .range(from, to);
 
     if (error) {
-      console.error("Supabase Error:", error);
+      console.warn("Supabase Error:", error);
     }
 
     console.log("Fetched Posts:", data);
@@ -596,17 +727,18 @@ export default function MainDashboardClient() {
         }
         const likesCount = Array.isArray(p.likes) ? p.likes.length : 0;
         const commentsCount = Array.isArray(p.comments) ? p.comments.length : 0;
+        const prof = Array.isArray(p.profiles) ? p.profiles[0] : p.profiles;
         return {
           id: p.id,
-          author: p.profiles?.username || p.profiles?.full_name || 'Creator',
-          handle: `@${p.profiles?.username || 'user'}`,
-          avatar: p.profiles?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp',
+          author: prof?.username || prof?.full_name || `user_${(p.user_id || "").substring(0, 8)}`,
+          handle: `@${prof?.username || 'user'}`,
+          avatar: prof?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp',
           image: mediaList[0] || null,
           video_url: p.video_url,
           media_url: p.media_url,
           image_url: p.image_url,
           media_urls: mediaList,
-          type: p.media_type || p.type,
+          type: p.media_type || p.type || (p.video_url || (mediaList[0] && mediaList[0].match(/\.(mp4|webm|mov|ogg)$/i)) ? 'video' : (p.image_url || (mediaList[0] && mediaList[0].match(/\.(png|jpe?g|gif|webp)$/i)) ? 'image' : null)),
           likes: likesCount,
           comments: Array.isArray(p.comments) ? p.comments : [],
           commentsCount: commentsCount,
@@ -665,7 +797,24 @@ export default function MainDashboardClient() {
         .select('*')
         .eq('id', uid)
         .single();
-      setProfile(data);
+        
+      if (!data && currentUser) {
+        const newProfile = {
+          id: uid,
+          full_name: currentUser.user_metadata?.full_name || 'Member',
+          username: currentUser.email ? currentUser.email.split('@')[0] : `user_${uid.substring(0,8)}`,
+          avatar_url: currentUser.user_metadata?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp'
+        };
+        try {
+          await supabase.from('profiles').insert(newProfile);
+          setProfile(newProfile);
+        } catch (err) {
+          console.error("Failed to restore profile:", err);
+          setProfile(null);
+        }
+      } else {
+        setProfile(data);
+      }
 
       fetchPosts(uid);
       fetchDashboardStats(uid);
@@ -678,6 +827,7 @@ export default function MainDashboardClient() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
+        if (_event === 'INITIAL_SESSION') return;
         const currentUser = session?.user ?? null;
         setUser(currentUser);
         if (currentUser) {
@@ -694,13 +844,10 @@ export default function MainDashboardClient() {
           fetchNotifications(currentUser.id);
         } else {
           setProfile(null);
-          if (_event === 'SIGNED_OUT') {
-            router.push('/login');
-          } else {
-            fetchPosts();
-            fetchStories();
-            fetchSuggestedUsers();
-          }
+          setViewingProfileUser(null);
+          fetchPosts();
+          fetchStories();
+          fetchSuggestedUsers();
         }
       }
     );
@@ -715,25 +862,11 @@ export default function MainDashboardClient() {
 
     const channel = supabase
       .channel('dashboard-realtime-channel')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, (payload) => {
-        if (payload.eventType === 'UPDATE' && payload.new && payload.old && payload.new.views !== payload.old.views) {
-          // Just update the view count in local state to avoid massive refetches
-          setPosts(prev => prev.map(p => p.id === payload.new.id ? { ...p, views: payload.new.views } : p));
-        } else {
-          fetchPosts(user.id);
+      .on('broadcast', { event: 'view_increment' }, (payload: any) => {
+        if (payload?.payload?.post_id) {
+          const { post_id, views } = payload.payload;
+          setPosts(prev => prev.map(p => p.id === post_id ? { ...p, views: views || (p.views + 1) } : p));
         }
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'likes' }, () => {
-        fetchPosts(user.id);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, () => {
-        fetchPosts(user.id);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'saved_posts' }, () => {
-        fetchPosts(user.id);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'followers' }, () => {
-        fetchFollowData(user.id);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
         fetchNotifications(user.id);
@@ -842,7 +975,7 @@ export default function MainDashboardClient() {
 
       fetchStories(user.id);
     } catch (error) {
-      console.error("Story upload error:", (error as any)?.message || error);
+      console.warn("Story upload error:", (error as any)?.message || error);
       alert("Failed to upload story");
     } finally {
       setStoryUploading(false);
@@ -851,7 +984,10 @@ export default function MainDashboardClient() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    router.push('/login');
+    setUser(null);
+    setProfile(null);
+    setViewingProfileUser(null);
+    setViewMode('feed');
   };
 
   const handleLike = async (id: string, isLiked: boolean) => {
@@ -923,7 +1059,7 @@ export default function MainDashboardClient() {
         setActiveSettingToast('Shared successfully');
         setTimeout(() => setActiveSettingToast(null), 2000);
       } catch (err) {
-        console.error('Error sharing:', err);
+        console.warn('Error sharing:', err);
       }
     } else {
       navigator.clipboard.writeText(url);
@@ -1027,6 +1163,7 @@ export default function MainDashboardClient() {
     if (profileTab === 'reels') return p.type === 'reel' || p.type === 'video';
     if (profileTab === 'videos') return p.type === 'video' || p.type === 'reel';
     if (profileTab === 'photos') return p.type === 'photo' || p.type === 'image' || (!p.type && p.image);
+    if (profileTab === 'copyright') return false;
     return true;
   });
 
@@ -1134,86 +1271,82 @@ export default function MainDashboardClient() {
         </div>
       )}
 
-      {/* Top Navigation Bar */}
-      <nav className={`sticky top-0 z-40 border-b transition-colors ${isDarkMode ? 'bg-zinc-950/95 border-zinc-800' : 'bg-white/95 border-zinc-200'} backdrop-blur-md`}>
+      {/* Top Navigation Bar - Completely separate fixed/sticky bar */}
+      <nav 
+        id="rmix-fixed-top-header"
+        className={`sticky top-0 z-40 border-b transition-colors shadow-sm ${
+          isDarkMode ? 'bg-zinc-950/95 border-zinc-800' : 'bg-white/95 border-zinc-200'
+        } backdrop-blur-md`}
+      >
         <div className="max-w-xl mx-auto px-4 h-14 flex items-center justify-between">
           
-          {/* R.MIX Brand Logo (Tapping logo returns to global home feed) */}
-          <div 
-            onClick={() => {
-              setViewMode('feed');
-              setSearchQuery('');
-            }}
-            className="flex items-center gap-2 cursor-pointer select-none group"
-          >
-            <div className="relative flex items-center justify-center">
-              <span className="text-3xl font-black font-serif bg-gradient-to-tr from-blue-500 via-indigo-400 to-purple-500 bg-clip-text text-transparent drop-shadow-[0_0_12px_rgba(99,102,241,0.6)] tracking-tighter">
-                R
-              </span>
-              <span className="text-xl font-bold font-sans bg-gradient-to-r from-indigo-300 via-purple-300 to-pink-400 bg-clip-text text-transparent tracking-widest ml-0.5">
-                .MIX
-              </span>
+          {/* LEFT: Three-line menu icon + R.mix brand name */}
+          <div className="flex items-center gap-3">
+            <button
+              id="header-menu-button"
+              onClick={() => {
+                setShowMainMenu(!showMainMenu);
+              }}
+              className={`p-2 -ml-2 rounded-full hover:bg-zinc-800/40 transition-colors ${
+                showMainMenu ? 'text-indigo-400 bg-zinc-800/30' : (isDarkMode ? 'text-zinc-200' : 'text-zinc-800')
+              }`}
+              title="Menu"
+              aria-label="Menu"
+            >
+              <Menu className="w-6 h-6" />
+            </button>
+
+            {/* R.mix Brand Logo & Name */}
+            <div 
+              id="header-brand-logo"
+              onClick={() => {
+                setViewingProfileUser(null);
+                setViewMode('feed');
+                setSearchQuery('');
+              }}
+              className="flex items-center gap-1.5 cursor-pointer select-none group"
+              title="R.mix Home"
+            >
+              <div className="relative flex items-center justify-center">
+                <span className="text-3xl font-black font-serif bg-gradient-to-tr from-blue-500 via-indigo-400 to-purple-500 bg-clip-text text-transparent drop-shadow-[0_0_12px_rgba(99,102,241,0.6)] tracking-tighter">
+                  R
+                </span>
+                <span className="text-xl font-bold font-sans bg-gradient-to-r from-indigo-300 via-purple-300 to-pink-400 bg-clip-text text-transparent tracking-widest ml-0.5">
+                  .MIX
+                </span>
+              </div>
             </div>
           </div>
           
-          <div className="flex items-center gap-3">
+          {/* RIGHT: Search icon + Plus (+) icon */}
+          <div className="flex items-center gap-2">
             {/* Search Icon */}
             <button 
-              onClick={() => setViewMode('search')}
-              className={`p-2 rounded-full hover:bg-zinc-800/50 transition-colors ${viewMode === 'search' ? 'text-indigo-400 bg-zinc-800/30' : (isDarkMode ? 'text-zinc-200' : 'text-zinc-800')}`}
+              id="header-search-button"
+              onClick={() => {
+                setViewingProfileUser(null);
+                setViewMode('search');
+              }}
+              className={`p-2 rounded-full hover:bg-zinc-800/40 transition-colors ${
+                viewMode === 'search' ? 'text-indigo-400 bg-zinc-800/30' : (isDarkMode ? 'text-zinc-200' : 'text-zinc-800')
+              }`}
               title="Search"
+              aria-label="Search"
             >
               <Search className="w-5 h-5" />
             </button>
 
-            {/* Messenger Icon */}
+            {/* Plus (+) Icon */}
             <button 
-              onClick={() => setShowMessagesModal(true)}
-              className={`p-2 rounded-full hover:bg-zinc-800/50 transition-colors relative ${isDarkMode ? 'text-zinc-200' : 'text-zinc-800'}`}
-              title="Messenger"
-            >
-              <MessageCircle className="w-5 h-5" />
-              {messagesList.some(m => !m.read) && (
-                <span className="absolute top-1 right-1 w-2 h-2 bg-indigo-500 rounded-full animate-pulse" />
-              )}
-            </button>
-
-            {/* Notification Icon */}
-            <button 
-              onClick={() => setShowNotificationsModal(true)}
-              className={`p-2 rounded-full hover:bg-zinc-800/50 transition-colors relative ${isDarkMode ? 'text-zinc-200' : 'text-zinc-800'}`}
-              title="Notifications"
-            >
-              <Bell className="w-5 h-5" />
-              {notificationsList.some(n => !n.read) && (
-                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-              )}
-            </button>
-
-            {/* Profile Avatar */}
-            <button 
-              onClick={() => {
-                if (user) {
-                  setViewMode('profile');
-                } else {
-                  router.push('/login');
-                }
-              }}
-              className={`w-8 h-8 rounded-full overflow-hidden border-2 transition-all ${
-                viewMode === 'profile' || viewMode === 'settings'
-                  ? 'border-indigo-500 ring-2 ring-indigo-500/50 scale-105'
-                  : 'border-zinc-700 opacity-80 hover:opacity-100'
+              id="header-plus-button"
+              onClick={() => setShowCreateChoiceModal(true)}
+              className={`p-2 rounded-full hover:bg-zinc-800/40 transition-colors ${
+                isDarkMode ? 'text-zinc-200' : 'text-zinc-800'
               }`}
-              title="Profile"
+              title="Create Post or Reel"
+              aria-label="Create Post or Reel"
             >
-              <Image 
-                width={100} 
-                height={100} 
-                referrerPolicy="no-referrer" 
-                src={profile?.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} 
-                alt="Profile Avatar" 
-                className="w-full h-full object-cover" 
-              />
+              <Plus className="w-6 h-6" />
             </button>
           </div>
         </div>
@@ -1227,6 +1360,26 @@ export default function MainDashboardClient() {
         onChange={handleStoryUpload} 
       />
       <div className="w-full flex justify-center items-start relative max-w-7xl mx-auto">
+        {/* THREE LINE MENU OVERLAY */}
+        {showMainMenu && (
+          <MainMenuPanel
+            profile={profile}
+            isDarkMode={isDarkMode}
+            onNavigateToProfile={() => {
+              setShowMainMenu(false);
+              openMyProfile();
+            }}
+            onNavigateToFeed={() => {
+              setShowMainMenu(false);
+              setViewingProfileUser(null);
+              setViewMode('feed');
+            }}
+            onNavigateToSettings={() => {
+              setShowMainMenu(false);
+              setViewMode('settings');
+            }}
+          />
+        )}
         <div className="flex-1 hidden xl:block" />
         <main className="w-full max-w-xl py-2 shrink-0">
         
@@ -1283,6 +1436,9 @@ export default function MainDashboardClient() {
         {/* ==================== VIEW MODE 3: DEDICATED REELS PAGE ==================== */}
         {viewMode === 'reels' && (
           <ReelsPage
+            loadMoreRef={loadMoreRef}
+            hasMorePosts={hasMorePosts}
+            isLoadingMore={isLoadingMore}
             reelsFeed={reelsFeed}
             setCreateMode={setCreateMode}
             setShowCreatePost={setShowCreatePost}
@@ -1329,7 +1485,9 @@ export default function MainDashboardClient() {
           const displayFollowers = isOwner ? followersCount : viewingProfileStats.followers;
           const displayFollowing = isOwner ? followingCount : viewingProfileStats.following;
           const displayPostsCount = displayUserPosts.length;
-          const displayTotalViews = isOwner ? totalUserViewsCount : 0;
+          const displayTotalViews = isOwner ? totalUserViewsCount : (viewingProfileStats.views || 0);
+          const displayTotalReach = isOwner ? estimatedReachCount : (viewingProfileStats.reach || 0);
+          const displayTotalEngagement = isOwner ? userEngagementRate : (viewingProfileStats.engagement || 0);
           const isFollowingThisUser = followedUsers[displayProf?.id] || followedUsers[displayProf?.username] || false;
 
           return (
@@ -1355,13 +1513,26 @@ export default function MainDashboardClient() {
                     </span>
                   </div>
                 )}
-                {isOwner && (
+                {isOwner ? (
                   <button
                     onClick={() => setShowEditProfile(true)}
                     className="absolute top-3.5 right-3.5 p-2.5 bg-black/70 hover:bg-black/90 rounded-full text-white backdrop-blur-md transition-all border border-white/20 shadow-lg hover:scale-105"
                     title="Edit Cover Banner"
                   >
                     <Edit3 className="w-4 h-4" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setViewingProfileUser(null);
+                      setViewingProfileStats({ followers: 0, following: 0 });
+                      setViewMode('feed');
+                    }}
+                    className="absolute top-3.5 left-3.5 px-3 py-1.5 bg-black/70 hover:bg-black/90 rounded-full text-white backdrop-blur-md transition-all border border-white/20 shadow-lg hover:scale-105 flex items-center gap-1.5 text-xs font-semibold z-20"
+                    title="Back to Feed"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    <span>Back to Feed</span>
                   </button>
                 )}
               </div>
@@ -1402,7 +1573,7 @@ export default function MainDashboardClient() {
                 <div>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <h1 className="text-xl sm:text-2xl font-black tracking-tight">
-                      {displayProf?.full_name || displayProf?.username || 'Member Name'}
+                      {displayProf?.full_name || displayProf?.username || (displayProf?.id ? `user_${displayProf.id.substring(0, 8)}` : "Member Name")}
                     </h1>
                     {displayProf?.is_verified && (
                       <span className="inline-flex items-center text-blue-500" title="Verified Creator Account">
@@ -1456,12 +1627,18 @@ export default function MainDashboardClient() {
                   <div className="font-extrabold text-base sm:text-lg text-zinc-100">{displayFollowing}</div>
                   <div className="text-[11px] text-zinc-400 font-medium tracking-tight">Following</div>
                 </div>
-                {isOwner && (
-                  <div className="border-l border-zinc-800/80 px-1">
-                    <div className="font-extrabold text-base sm:text-lg text-indigo-400">{displayTotalViews}</div>
-                    <div className="text-[11px] text-zinc-400 font-medium tracking-tight">Total Views</div>
-                  </div>
-                )}
+                <div className="border-l border-zinc-800/80 px-1">
+                  <div className="font-extrabold text-base sm:text-lg text-indigo-400">{displayTotalViews}</div>
+                  <div className="text-[11px] text-zinc-400 font-medium tracking-tight">Total Views</div>
+                </div>
+                <div className="border-l border-zinc-800/80 px-1">
+                  <div className="font-extrabold text-base sm:text-lg text-emerald-400">{typeof displayTotalEngagement === 'number' ? displayTotalEngagement.toFixed(1) : '0'}%</div>
+                  <div className="text-[11px] text-zinc-400 font-medium tracking-tight">Engagement</div>
+                </div>
+                <div className="border-l border-zinc-800/80 px-1">
+                  <div className="font-extrabold text-base sm:text-lg text-purple-400">{displayTotalReach}</div>
+                  <div className="text-[11px] text-zinc-400 font-medium tracking-tight">Total Reach</div>
+                </div>
               </div>
 
               {/* 4) Edit Profile Button (Owner) OR Follow Button (Visitor) */}
@@ -1608,11 +1785,39 @@ export default function MainDashboardClient() {
                     <Video className="w-4 h-4" />
                     <span>Videos</span>
                   </button>
+                  <button 
+                    onClick={() => setProfileTab('copyright')}
+                    className={`flex items-center gap-1.5 py-3 px-3 text-xs sm:text-sm font-bold border-b-2 transition-all ${
+                      profileTab === 'copyright' 
+                        ? 'border-indigo-500 text-indigo-400' 
+                        : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    <ShieldAlert className="w-4 h-4" />
+                    <span>Copyright</span>
+                  </button>
                 </div>
               </div>
 
+              {/* Watch Reels/Videos Viewer Button for Profile Reels/Videos tab */}
+              {(profileTab === 'reels' || profileTab === 'videos') && displayFilteredPosts.length > 0 && (
+                <div className="px-4 pt-3">
+                  <button
+                    onClick={() => setShowProfileReelsViewer(true)}
+                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg transition-all"
+                  >
+                    <Play className="w-4 h-4 fill-white" />
+                    <span>Watch {profileTab === 'reels' ? 'Reels' : 'Videos'} Viewer (with Ads)</span>
+                  </button>
+                </div>
+              )}
+
               {/* 7) Media Grid */}
-              {displayFilteredPosts.length === 0 ? (
+              {profileTab === 'copyright' ? (
+                <div className="pt-4 px-2">
+                  <CopyrightManagementSection supabase={supabase} user={displayProf} />
+                </div>
+              ) : displayFilteredPosts.length === 0 ? (
                 <div className="text-center py-12 text-zinc-500 text-sm">
                   No items found in {profileTab}
                 </div>
@@ -1686,6 +1891,7 @@ export default function MainDashboardClient() {
           {/* Home button always returns to global feed */}
           <button 
             onClick={() => {
+              setViewingProfileUser(null);
               setViewMode('feed');
               setSearchQuery('');
             }} 
@@ -1697,7 +1903,10 @@ export default function MainDashboardClient() {
 
           {/* Search button opens dedicated Search page */}
           <button 
-            onClick={() => setViewMode('search')} 
+            onClick={() => {
+              setViewingProfileUser(null);
+              setViewMode('search');
+            }} 
             className={`hover:opacity-70 transition-opacity ${viewMode === 'search' ? 'opacity-100 text-indigo-400' : 'opacity-50'}`}
             title="Search"
           >
@@ -1707,11 +1916,7 @@ export default function MainDashboardClient() {
           {/* Plus button opens 4 post creator choices */}
           <button 
             onClick={() => {
-              if (!user) {
-                router.push('/login');
-              } else {
-                setShowCreateChoiceModal(true);
-              }
+              setShowCreateChoiceModal(true);
             }} 
             className="hover:opacity-70 transition-opacity opacity-70 hover:opacity-100 text-indigo-400"
             title="Create Post"
@@ -1721,7 +1926,10 @@ export default function MainDashboardClient() {
 
           {/* Reels button opens dedicated Reels page */}
           <button 
-            onClick={() => setViewMode('reels')} 
+            onClick={() => {
+              setViewingProfileUser(null);
+              setViewMode('reels');
+            }} 
             className={`hover:opacity-70 transition-opacity ${viewMode === 'reels' ? 'opacity-100 text-indigo-400' : 'opacity-50'}`}
             title="Reels"
           >
@@ -1730,7 +1938,10 @@ export default function MainDashboardClient() {
 
           {/* Live Broadcast button */}
           <button 
-            onClick={() => setViewMode('live')} 
+            onClick={() => {
+              setViewingProfileUser(null);
+              setViewMode('live');
+            }} 
             className={`hover:opacity-70 transition-opacity ${viewMode === 'live' ? 'opacity-100 text-red-500 animate-pulse' : 'opacity-50'}`}
             title="Live Streams"
           >
@@ -1739,13 +1950,7 @@ export default function MainDashboardClient() {
           
           {/* Profile button */}
           <button 
-            onClick={() => {
-              if (user) {
-                setViewMode('profile');
-              } else {
-                router.push('/login');
-              }
-            }} 
+            onClick={openMyProfile} 
             className={`w-7 h-7 rounded-full bg-zinc-800 overflow-hidden border transition-all ${
               viewMode === 'profile' || viewMode === 'settings' 
                 ? 'border-indigo-500 ring-2 ring-indigo-500/50 opacity-100 scale-105' 
@@ -2074,14 +2279,10 @@ export default function MainDashboardClient() {
               </button>
             </div>
 
-            {/* Main Content Area */}
             <div className="space-y-6">
               {/* Achievement Banner */}
               {(followersCount >= 1000 || totalUserViewsCount >= 300000) && (
-                <motion.div 
-                  initial={{ opacity: 0, y: -20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="p-5 rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 shadow-xl shadow-indigo-500/20 mb-6 relative overflow-hidden group"
+                <div className="p-5 rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 shadow-xl shadow-indigo-500/20 mb-6 relative overflow-hidden group"
                 >
                   <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10" />
                   <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700" />
@@ -2105,7 +2306,7 @@ export default function MainDashboardClient() {
                       Apply Now
                     </button>
                   </div>
-                </motion.div>
+                </div>
               )}
 
               {/* Content based on selected tab */}
@@ -2211,11 +2412,7 @@ export default function MainDashboardClient() {
                         </div>
                       </div>
                       <div className="h-2.5 w-full bg-zinc-950 rounded-full overflow-hidden border border-zinc-800">
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${Math.min(100, (followersCount / 1000) * 100)}%` }}
-                          transition={{ duration: 1.2, ease: "circOut" }}
-                          className={`h-full rounded-full ${followersCount >= 1000 ? 'bg-gradient-to-r from-emerald-600 to-emerald-400' : 'bg-gradient-to-r from-indigo-600 to-indigo-400'}`} 
+                        <div style={{ width: `${Math.min((followersCount / 1000) * 100, 100)}%` }} className={`h-full rounded-full ${followersCount >= 1000 ? 'bg-gradient-to-r from-emerald-600 to-emerald-400' : 'bg-gradient-to-r from-indigo-600 to-indigo-400'}`} 
                         />
                       </div>
                     </div>
@@ -2231,11 +2428,7 @@ export default function MainDashboardClient() {
                         </div>
                       </div>
                       <div className="h-2.5 w-full bg-zinc-950 rounded-full overflow-hidden border border-zinc-800">
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${Math.min(100, (totalUserViewsCount / 300000) * 100)}%` }}
-                          transition={{ duration: 1.2, ease: "circOut" }}
-                          className={`h-full rounded-full ${totalUserViewsCount >= 300000 ? 'bg-gradient-to-r from-emerald-600 to-emerald-400' : 'bg-gradient-to-r from-purple-600 to-purple-400'}`} 
+                        <div style={{ width: `${Math.min((totalUserViewsCount / 300000) * 100, 100)}%` }} className={`h-full rounded-full ${totalUserViewsCount >= 300000 ? 'bg-gradient-to-r from-emerald-600 to-emerald-400' : 'bg-gradient-to-r from-purple-600 to-purple-400'}`} 
                         />
                       </div>
                     </div>
@@ -2632,7 +2825,7 @@ export default function MainDashboardClient() {
             if (newPost) {
               const formattedNewPost = {
                 id: newPost.id,
-                author: newPost.profiles?.username || newPost.profiles?.full_name || 'Creator',
+                author: newPost.profiles?.username || newPost.profiles?.full_name || `user_${(newPost.user_id || "").substring(0, 8)}`,
                 handle: `@${newPost.profiles?.username || 'user'}`,
                 avatar: newPost.profiles?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp',
                 image: (typeof newPost.media_url === 'string' && newPost.media_url.startsWith('[')) ? JSON.parse(newPost.media_url)[0] : newPost.media_url,
@@ -2657,6 +2850,74 @@ export default function MainDashboardClient() {
             
           }}
         />
+      )}
+
+      {/* Profile Reels Viewer Modal with Ads after every 3 reels */}
+      {showProfileReelsViewer && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col">
+          <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between bg-zinc-950">
+            <div className="flex items-center gap-2 text-white font-bold text-sm">
+              <Film className="w-5 h-5 text-indigo-400" />
+              <span>{((!viewingProfileUser || viewingProfileUser.id === user?.id) ? profile : viewingProfileUser)?.username || 'Profile'} Reels Viewer</span>
+            </div>
+            <button 
+              onClick={() => setShowProfileReelsViewer(false)}
+              className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 max-w-xl mx-auto w-full space-y-6">
+            {(() => {
+              const isOwner = !(viewingProfileUser) || viewingProfileUser.id === user?.id;
+              const displayProf = isOwner ? profile : viewingProfileUser;
+              const displayUserPosts = posts.filter(p => p.user_id === displayProf?.id);
+              const profileReels = displayUserPosts.filter(p => p.type === 'reel' || p.type === 'video');
+              if (profileReels.length === 0) {
+                return <div className="text-center py-12 text-zinc-500">No reels or videos found for this profile.</div>;
+              }
+              return profileReels.map((reel, idx) => {
+                const mediaList = typeof reel.media_url === "string" ? (() => { try { const parsed = JSON.parse(reel.media_url); return Array.isArray(parsed) ? parsed : [parsed]; } catch { return [reel.media_url]; } })() : reel.media_url || [];
+                const mediaSrc = mediaList[0] || reel.image;
+                return (
+                  <div key={reel.id} className="space-y-6">
+                    <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden p-4 space-y-3 shadow-xl">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full overflow-hidden border border-zinc-700">
+                          <Image width={100} height={100} referrerPolicy="no-referrer" src={displayProf?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp'} alt="Avatar" className="w-full h-full object-cover" />
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-sm text-white">{displayProf?.full_name || displayProf?.username}</h4>
+                          <p className="text-xs text-zinc-400">@{displayProf?.username}</p>
+                        </div>
+                      </div>
+                      <p className="text-sm text-zinc-200">{reel.caption}</p>
+                      <div className="rounded-xl overflow-hidden bg-black aspect-[9/16] max-h-[500px] flex items-center justify-center relative">
+                        {mediaSrc ? (
+                          <video src={mediaSrc} className="w-full h-full object-cover" controls={false} playsInline preload="metadata" />
+                        ) : (
+                          <div className="text-zinc-500 text-xs">No media</div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-zinc-400 pt-1">
+                        <span className="flex items-center gap-1"><Heart className="w-4 h-4 text-red-500 fill-red-500" /> {reel.likes || 0} likes</span>
+                        <span className="flex items-center gap-1"><MessageCircle className="w-4 h-4 text-indigo-400" /> {reel.commentsCount || 0} comments</span>
+                      </div>
+                    </div>
+
+                    {/* Automatically insert one advertisement after every 3 reels */}
+                    {(idx + 1) % 3 === 0 && (
+                      <div className="p-4 bg-zinc-950 border border-zinc-900 rounded-2xl my-4 text-center">
+                        <span className="text-[10px] text-zinc-500 uppercase tracking-widest block mb-2">Advertisement</span>
+                        <AdUnit format="fluid" layoutKey="-gw-1+2a-9x+5c" />
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        </div>
       )}
 
       {/* Selected Profile Post / Video Modal */}
@@ -2709,7 +2970,7 @@ export default function MainDashboardClient() {
                 const mediaSrc = mediaList[0] || selectedProfilePost.image;
                 if (selectedProfilePost.type === 'video' || selectedProfilePost.type === 'reel') {
                   return (
-                    <VideoPlayer src={mediaSrc} className="w-full h-full max-h-[450px]" autoPlay muted={false} controls playsInline />
+                    <VideoPlayer src={mediaSrc} className="w-full h-full max-h-[450px]" autoPlay muted={false} controls={false} playsInline />
                   );
                 }
                 return mediaSrc ? (

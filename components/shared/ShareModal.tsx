@@ -40,7 +40,7 @@ export function ShareModal({ isOpen, onClose, postId }: ShareModalProps) {
           url: url
         });
       } catch (err) {
-        console.error(err);
+        console.warn(err);
       }
     } else {
       alert("Native share is not supported on this device.");

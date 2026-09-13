@@ -95,7 +95,7 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose, initial
       if (error) throw error;
       setSessionsList(data || []);
     } catch (err) {
-      console.error('Error fetching active live sessions:', err);
+      console.warn('Error fetching active live sessions:', err);
     } finally {
       setLoadingSessions(false);
     }
@@ -216,7 +216,7 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose, initial
       setLocalStream(mediaStream);
       setHostingStep('preview');
     } catch (err: any) {
-      console.error("Failed to acquire preview stream:", err);
+      console.warn("Failed to acquire preview stream:", err);
       setMediaError(`Media acquisition failed: ${err.message || 'Unknown error'}`);
     }
   };
@@ -277,7 +277,7 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose, initial
         console.warn("MediaRecorder not supported or failed to start", err);
       }
     } catch (err: any) {
-      console.error("Failed to start live stream database session:", err);
+      console.warn("Failed to start live stream database session:", err);
       setMediaError(`Unable to create live session: ${err.message || 'Database insert failed'}`);
     }
   };
@@ -322,7 +322,7 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose, initial
             }
           }
         } catch (e) {
-          console.error("Failed to save live recording:", e);
+          console.warn("Failed to save live recording:", e);
         }
       };
       
@@ -364,7 +364,7 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose, initial
       Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
       peerConnectionsRef.current = {};
     } catch (err) {
-      console.error("Error ending live session:", err);
+      console.warn("Error ending live session:", err);
     }
 
     // Leave and delete channel subscription
@@ -410,7 +410,7 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose, initial
         setComments(data);
       }
     } catch (err) {
-      console.error("Error fetching live comments:", err);
+      console.warn("Error fetching live comments:", err);
     }
 
     // Setup Realtime Channel for Viewer
@@ -733,7 +733,7 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose, initial
 
       // (Realtime DB insert policy will automatically propagate this via postgres_changes)
     } catch (err) {
-      console.error("Error sending comment:", err);
+      console.warn("Error sending comment:", err);
     }
   };
 

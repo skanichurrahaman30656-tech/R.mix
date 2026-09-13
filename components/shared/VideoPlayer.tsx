@@ -131,12 +131,12 @@ export const VideoPlayer = React.forwardRef<HTMLVideoElement, VideoPlayerProps>(
           </div>
         )}
 
-        {isValidType && inView && (
+        {isValidType && (
           <video
             ref={videoRef}
             src={src}
             poster={poster}
-            className={`w-full h-full object-cover transition-all duration-700 ${loading ? 'opacity-0 scale-105 blur-md' : 'opacity-100 scale-100 blur-0'}`}
+            className={`w-full h-full object-cover transition-all duration-700 ${loading ? 'opacity-0 scale-105 blur-md' : 'opacity-100 scale-100 blur-0'} ${!inView ? 'invisible' : 'visible'}`}
             controls={controls && !error}
             controlsList="nodownload noremoteplayback nofullscreen"
             disablePictureInPicture

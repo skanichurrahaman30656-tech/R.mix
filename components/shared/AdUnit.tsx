@@ -20,7 +20,7 @@ export default function AdUnit({ className, slotId, format = 'auto', layoutKey }
         ((window as any).adsbygoogle = (window as any).adsbygoogle || []).push({});
       }
     } catch (err) {
-      console.error('AdSense push error:', err);
+      console.warn('AdSense push error:', err);
     }
   }, []);
 

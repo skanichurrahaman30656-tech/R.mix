@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
 import { X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+
 
 interface LightboxProps {
   src: string;
@@ -141,13 +141,7 @@ export function Lightbox({ src, onClose, alt = "Enlarged view" }: LightboxProps)
         className="w-full h-full flex items-center justify-center overflow-hidden"
         onWheel={handleWheel}
       >
-        <motion.div
-          animate={{
-            x: position.x,
-            y: position.y,
-            scale: scale
-          }}
-          transition={isDragging ? { type: 'just' } : { type: 'spring', damping: 25, stiffness: 220 }}
+        <div
           className="relative max-w-[90%] max-h-[85%] cursor-grab active:cursor-grabbing flex items-center justify-center"
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
@@ -163,7 +157,7 @@ export function Lightbox({ src, onClose, alt = "Enlarged view" }: LightboxProps)
             alt={alt}
             className="pointer-events-none rounded max-w-full max-h-full object-contain"
           />
-        </motion.div>
+        </div>
       </div>
 
       {/* Bottom Floating Control Bar */}

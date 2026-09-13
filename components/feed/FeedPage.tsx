@@ -33,6 +33,29 @@ export function FeedPage({
   onVideoTap
 }: any) {
   const [lightboxSrc, setLightboxSrc] = React.useState<string | null>(null);
+  const [heartPopId, setHeartPopId] = React.useState<string | null>(null);
+  const clickTimer = React.useRef<Record<string, NodeJS.Timeout | null>>({});
+
+  const handleDoubleTap = (id: string, isLiked: boolean) => {
+    if (!isLiked) {
+      handleLike(id, isLiked);
+    }
+    setHeartPopId(id);
+    setTimeout(() => setHeartPopId(null), 1000);
+  };
+
+  const handlePostClick = (postId: string, isLiked: boolean) => {
+    if (clickTimer.current[postId]) {
+      clearTimeout(clickTimer.current[postId] as NodeJS.Timeout);
+      clickTimer.current[postId] = null;
+      handleDoubleTap(postId, isLiked);
+    } else {
+      clickTimer.current[postId] = setTimeout(() => {
+        clickTimer.current[postId] = null;
+        if (onVideoTap) onVideoTap(postId);
+      }, 250);
+    }
+  };
 
   return (
     <>
@@ -229,16 +252,20 @@ export function FeedPage({
                   const mediaSrc = mediaList[0] || post.image;
                   if (!mediaSrc) return null;
                   return (
-                    <div className="aspect-square bg-zinc-900 relative rounded-md overflow-hidden mx-4 my-2 border border-zinc-800/50" onDoubleClick={() => handleLike(post.id, post.isLiked)}>
+                    <div className="aspect-square bg-zinc-900 relative rounded-md overflow-hidden mx-4 my-2 border border-zinc-800/50" onDoubleClick={() => handleDoubleTap(post.id, post.isLiked)}>
+                      {heartPopId === post.id && (
+                        <div className="absolute inset-0 flex items-center justify-center z-40 pointer-events-none">
+                          <Heart className="w-32 h-32 text-red-500 fill-red-500 animate-heart-pop drop-shadow-[0_0_30px_rgba(239,68,68,0.8)]" />
+                        </div>
+                      )}
                       {post.type === 'video' || post.type === 'reel' ? (
                         <div 
                           className="w-full h-full cursor-pointer relative group" 
-                          onClick={() => onVideoTap && onVideoTap(post.id)}
+                          onClick={() => handlePostClick(post.id, post.isLiked)}
                         >
-                          <VideoPlayer src={mediaSrc} className="w-full h-full pointer-events-none" autoPlay muted={false} controls={false} playsInline />
+                          <VideoPlayer src={mediaSrc} className="w-full h-full pointer-events-none" autoPlay muted={true} controls={false} playsInline />
                           
                           
-
                           <div className="absolute inset-0 bg-black/10 hover:bg-black/30 flex items-center justify-center transition-colors pointer-events-none">
                             <div className="w-12 h-12 rounded-full bg-black/60 backdrop-blur-sm border border-zinc-700/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                               <Play className="w-5 h-5 text-white fill-white ml-0.5" />
@@ -253,7 +280,19 @@ export function FeedPage({
                           src={mediaSrc} 
                           alt="Post content" 
                           className="w-full h-full object-cover cursor-pointer hover:opacity-95 transition-opacity" 
-                          onClick={() => setLightboxSrc(mediaSrc)}
+                          onClick={(e) => {
+                            if (clickTimer.current[post.id]) {
+                              clearTimeout(clickTimer.current[post.id] as NodeJS.Timeout);
+                              clickTimer.current[post.id] = null;
+                              handleDoubleTap(post.id, post.isLiked);
+                            } else {
+                              clickTimer.current[post.id] = setTimeout(() => {
+                                clickTimer.current[post.id] = null;
+                                setLightboxSrc(mediaSrc);
+                              }, 250);
+                            }
+                          }}
+                          priority={index === 0}
                         />
                       )}
                     </div>
@@ -281,7 +320,7 @@ export function FeedPage({
 
                   <div className="font-semibold text-sm mb-1 text-zinc-300">
                     {post.likes.toLocaleString()} likes
-                    {(post.type === "video" || post.type === "reel") && post.views > 0 && ` • ${post.views.toLocaleString()} views`}
+                    {(post.type === "video" || post.type === "reel") && post.views !== undefined && ` • ${post.views.toLocaleString()} views`}
                   </div>
                   <div className="text-sm mb-1">
                     <span

@@ -100,7 +100,7 @@ export function StoryViewer({ stories, initialIndex, onClose, currentUser }: Sto
         if (repliesData) setReplies(repliesData);
       }
     } catch (e) {
-      console.error((e as any)?.message || e);
+      console.warn((e as any)?.message || e);
     }
   };
 
