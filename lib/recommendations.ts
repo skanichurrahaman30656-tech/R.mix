@@ -204,10 +204,15 @@ export async function rankAndPersonalizePosts(
     const cutoffDate = new Date();
     cutoffDate.setHours(cutoffDate.getHours() - 48);
 
-    const { data: recentEvents } = await supabase
+    const { data: recentEvents, error: eventsError } = await supabase
       .from('recommendation_events')
       .select('post_id, event_type, watch_duration, percentage_watched, created_at')
       .gt('created_at', cutoffDate.toISOString());
+
+    // If recommendation_events table is missing, schema cache issue, or query fails, gracefully fallback to raw posts
+    if (eventsError || !recentEvents) {
+      return rawPosts;
+    }
 
     // 3. Fetch early audience configuration thresholds
     const settings = await getAudienceSettings(supabase);

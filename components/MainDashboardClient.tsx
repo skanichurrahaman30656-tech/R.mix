@@ -338,8 +338,25 @@ export default function MainDashboardClient({
         .eq('user_id', targetUid)
         .order('created_at', { ascending: false });
 
-      if (data) {
-        const formattedPosts = data.map((p: any) => {
+      let profileData = data;
+      if (error || !profileData) {
+        console.warn("Primary profile posts query failed; using safe core-post fallback.", error);
+        const { data: fallbackData } = await supabase
+          .from('posts')
+          .select(`
+            *,
+            profiles:user_id ( id, username, full_name, avatar_url ),
+            likes ( user_id ),
+            comments ( id, content, created_at, profiles:user_id ( id, username, avatar_url ) ),
+            saved_posts ( user_id )
+          `)
+          .eq('user_id', targetUid)
+          .order('created_at', { ascending: false });
+        if (fallbackData) profileData = fallbackData;
+      }
+
+      if (profileData) {
+        const formattedPosts = profileData.map((p: any) => {
           let mediaList: string[] = [];
           if (p.media_url) {
             if (Array.isArray(p.media_url)) {
@@ -728,6 +745,9 @@ export default function MainDashboardClient({
     const from = isLoadMore ? pageIndex * POSTS_LIMIT : 0;
     const to = isLoadMore ? ((pageIndex + 1) * POSTS_LIMIT) - 1 : ((pageIndex + 1) * POSTS_LIMIT) - 1;
 
+    let postsData: any[] | null = null;
+
+    // Primary Query: Full post query with nested metrics and views
     const { data, error } = await supabase
       .from('posts')
       .select(`
@@ -742,19 +762,40 @@ export default function MainDashboardClient({
       .order('created_at', { ascending: false })
       .range(from, to);
 
-    if (error) {
-      console.warn("Supabase Error:", error);
-      if (error.message?.includes('exceed_cached_egress_quota') || error.code === '402' || error.message?.includes('restricted')) {
+    if (error || !data) {
+      console.warn("Primary post query failed; using safe core-post fallback.", error);
+      if (error?.message?.includes('exceed_cached_egress_quota') || error?.code === '402' || error?.message?.includes('restricted')) {
         setApiRestrictionError(error.message);
       }
+
+      // Safe core fallback query independent of analytics/view metrics
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('posts')
+        .select(`
+          *,
+          profiles:user_id ( id, username, full_name, avatar_url ),
+          likes ( user_id ),
+          comments ( id, content, created_at, profiles:user_id ( id, username, avatar_url ) ),
+          saved_posts ( user_id )
+        `)
+        .order('created_at', { ascending: false })
+        .range(from, to);
+
+      if (fallbackError) {
+        console.error("Fallback post query error:", fallbackError);
+      } else if (fallbackData) {
+        postsData = fallbackData;
+        setApiRestrictionError(null);
+      }
     } else {
+      postsData = data;
       setApiRestrictionError(null);
     }
 
-    console.log("Fetched Posts:", data);
+    console.log("Fetched Posts:", postsData);
 
-    if (data) {
-      const formattedPosts = data.map((p: any) => {
+    if (postsData) {
+      const formattedPosts = postsData.map((p: any) => {
         let mediaList: string[] = [];
         if (p.media_url) {
           if (Array.isArray(p.media_url)) {
@@ -823,11 +864,11 @@ export default function MainDashboardClient({
           });
           return newPosts;
         });
-        setHasMorePosts(data.length === POSTS_LIMIT);
+        setHasMorePosts(postsData.length === POSTS_LIMIT);
       } else {
         setPosts(rankedPosts);
         if (pageIndex === 0) {
-          setHasMorePosts(data.length === POSTS_LIMIT);
+          setHasMorePosts(postsData.length === POSTS_LIMIT);
         }
       }
     }
@@ -880,6 +921,7 @@ export default function MainDashboardClient({
       fetchFollowData(uid);
       fetchSuggestedUsers(uid);
       fetchNotifications(uid);
+      fetchProfilePosts(uid);
     };
     checkUser();
 
@@ -900,6 +942,7 @@ export default function MainDashboardClient({
           fetchFollowData(currentUser.id);
           fetchSuggestedUsers(currentUser.id);
           fetchNotifications(currentUser.id);
+          fetchProfilePosts(currentUser.id);
         } else {
           setProfile(null);
           setViewingProfileUser(null);
