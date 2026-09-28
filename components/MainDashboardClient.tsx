@@ -5,6 +5,7 @@ import AdUnit from './shared/AdUnit';
 import Image from "next/image";
 import { VideoPlayer } from "./shared/VideoPlayer";
 import { MainMenuPanel } from "./shared/MainMenuPanel";
+import { ViewTracker } from "./shared/ViewTracker";
 const StoryViewer = dynamic(() => import('./story/StoryViewer').then(mod => mod.StoryViewer), { ssr: false });
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -19,7 +20,7 @@ import {
   Volume2, VolumeX, User, ArrowUpRight, BarChart3,
   Link as LinkIcon, MapPin, CheckCircle2, DollarSign, Star, Award, 
   Zap, Briefcase, Send, ShieldCheck, ShieldAlert, CreditCard, Lightbulb,
-  Menu, Plus
+  Menu, Plus, AlertCircle
 } from 'lucide-react';
 
 const CreatePostModal = dynamic(() => import('./shared/CreatePostModal'), { ssr: false });
@@ -61,6 +62,7 @@ export default function MainDashboardClient({
   const [suggestedUsers, setSuggestedUsers] = useState<any[]>([]);
   const [notificationsList, setNotificationsList] = useState<any[]>([]);
   const [messagesList, setMessagesList] = useState<any[]>([]);
+  const [apiRestrictionError, setApiRestrictionError] = useState<string | null>(null);
   
   const [user, setUser] = useState<any>(null);
   const [dashboardStats, setDashboardStats] = useState({
@@ -79,6 +81,7 @@ export default function MainDashboardClient({
   const [showCreateChoiceModal, setShowCreateChoiceModal] = useState(false);
   const [createMode, setCreateMode] = useState<'photo' | 'video' | 'reel' | 'text'>('text');
   const [showCreatePost, setShowCreatePost] = useState(false);
+  const [createPostInitialFiles, setCreatePostInitialFiles] = useState<File[]>([]);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showFullDashboard, setShowFullDashboard] = useState(false);
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
@@ -329,7 +332,8 @@ export default function MainDashboardClient({
           likes ( user_id ),
           comments ( id, content, created_at, profiles:user_id ( id, username, avatar_url ) ),
           saved_posts ( user_id ),
-          post_views ( id )
+          post_metrics ( view_count, reach_count ),
+          post_views ( id, viewer_id )
         `)
         .eq('user_id', targetUid)
         .order('created_at', { ascending: false });
@@ -353,6 +357,19 @@ export default function MainDashboardClient({
           const likesCount = Array.isArray(p.likes) ? p.likes.length : 0;
           const commentsCount = Array.isArray(p.comments) ? p.comments.length : 0;
           const prof = Array.isArray(p.profiles) ? p.profiles[0] : p.profiles;
+          const isVideoMedia = Boolean(p.video_url) || Boolean(mediaList[0] && /\.(mp4|webm|mov|ogg|m4v)$/i.test(mediaList[0]));
+          const isImageMedia = Boolean(p.image_url) || Boolean(mediaList[0] && /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(mediaList[0]));
+          const resolvedType = p.media_type || (
+            p.type === 'video' || p.type === 'reel' || (p.type && p.type.toString().startsWith('video/')) || isVideoMedia
+              ? (p.type === 'reel' ? 'reel' : 'video')
+              : (p.type === 'photo' || p.type === 'image' || (p.type && p.type.toString().startsWith('image/')) || isImageMedia)
+              ? 'image'
+              : (p.type && p.type !== 'text' ? p.type : (mediaList.length > 0 ? (isVideoMedia ? 'video' : 'image') : 'text'))
+          );
+          const metricViews = Array.isArray(p.post_metrics) ? (p.post_metrics[0]?.view_count ?? 0) : (p.post_metrics?.view_count ?? 0);
+          const rawViews = Array.isArray(p.post_views) ? p.post_views.length : 0;
+          const totalViews = Math.max(Number(metricViews || 0), Number(rawViews || 0));
+
           return {
             id: p.id,
             author: prof?.username || prof?.full_name || `user_${(p.user_id || "").substring(0, 8)}`,
@@ -363,14 +380,15 @@ export default function MainDashboardClient({
             media_url: p.media_url,
             image_url: p.image_url,
             media_urls: mediaList,
-            type: p.media_type || p.type || (p.video_url || (mediaList[0] && mediaList[0].match(/\.(mp4|webm|mov|ogg)$/i)) ? 'video' : (p.image_url || (mediaList[0] && mediaList[0].match(/\.(png|jpe?g|gif|webp)$/i)) ? 'image' : null)),
+            type: resolvedType,
             likes: likesCount,
             comments: Array.isArray(p.comments) ? p.comments : [],
             commentsCount: commentsCount,
             caption: p.content,
-            views: Array.isArray(p.post_views) ? p.post_views.length : 0,
+            views: totalViews,
             savesCount: Array.isArray(p.saved_posts) ? p.saved_posts.length : 0,
             post_views: Array.isArray(p.post_views) ? p.post_views : [],
+            post_metrics: p.post_metrics,
             isLiked: user?.id && Array.isArray(p.likes) ? p.likes.some((l: any) => l.user_id === user?.id) : false,
             isBookmarked: user?.id && Array.isArray(p.saved_posts) ? p.saved_posts.some((s: any) => s.user_id === user?.id) : false,
             showComments: false,
@@ -429,17 +447,27 @@ export default function MainDashboardClient({
       // Fetch user's post stats for total views, reach, and engagement
       const { data: postStats } = await supabase
         .from('posts')
-        .select('likes(user_id), comments(id), post_views(id, user_id)')
+        .select('likes(user_id), comments(id), post_metrics(view_count, reach_count), post_views(id, viewer_id)')
         .eq('user_id', targetUserId);
       
       let tViews = 0, tLikes = 0, tComments = 0;
       let reachSet = new Set();
       if (postStats) {
         postStats.forEach((p: any) => {
-          tViews += (Array.isArray(p.post_views) ? p.post_views.length : 0);
+          const pm = Array.isArray(p.post_metrics) ? p.post_metrics[0] : p.post_metrics;
+          const metricViews = pm?.view_count ? Number(pm.view_count) : 0;
+          const rawViews = Array.isArray(p.post_views) ? p.post_views.length : 0;
+          tViews += Math.max(metricViews, rawViews);
           tLikes += (p.likes?.length || 0);
           tComments += (p.comments?.length || 0);
-          (p.post_views || []).forEach((v: any) => reachSet.add(v.user_id));
+          if (pm?.reach_count) {
+            for (let i = 0; i < Number(pm.reach_count); i++) {
+              reachSet.add(`metric_${p.id || ''}_${i}`);
+            }
+          }
+          (p.post_views || []).forEach((v: any) => {
+            if (v.viewer_id) reachSet.add(v.viewer_id);
+          });
         });
       }
       const reach = reachSet.size;
@@ -652,7 +680,7 @@ export default function MainDashboardClient({
     try {
       const { data, error } = await supabase
         .from('posts')
-        .select('id, user_id, likes(user_id), comments(id), saved_posts(user_id), post_views(id, user_id)')
+        .select('id, user_id, likes(user_id), comments(id), saved_posts(user_id), post_metrics(view_count, reach_count), post_views(id, viewer_id)')
         .eq('user_id', uid);
       if (error) throw error;
       
@@ -663,9 +691,19 @@ export default function MainDashboardClient({
         data.forEach((p: any) => {
           tLikes += (p.likes?.length || 0);
           tComments += (p.comments?.length || 0);
-          tViews += (Array.isArray(p.post_views) ? p.post_views.length : 0);
           tSaves += (p.saved_posts?.length || 0);
-          (p.post_views || []).forEach((v: any) => reachSet.add(v.user_id));
+          const pm = Array.isArray(p.post_metrics) ? p.post_metrics[0] : p.post_metrics;
+          const metricViews = pm?.view_count ? Number(pm.view_count) : 0;
+          const rawViews = Array.isArray(p.post_views) ? p.post_views.length : 0;
+          tViews += Math.max(metricViews, rawViews);
+          if (pm?.reach_count) {
+            for (let i = 0; i < Number(pm.reach_count); i++) {
+              reachSet.add(`metric_${p.id}_${i}`);
+            }
+          }
+          (p.post_views || []).forEach((v: any) => {
+            if (v.viewer_id) reachSet.add(v.viewer_id);
+          });
         });
       }
       
@@ -698,13 +736,19 @@ export default function MainDashboardClient({
         likes ( user_id ),
         comments ( id, content, created_at, profiles:user_id ( id, username, avatar_url ) ),
         saved_posts ( user_id ),
-        post_views ( id )
+        post_metrics ( view_count, reach_count ),
+        post_views ( id, viewer_id )
       `)
       .order('created_at', { ascending: false })
       .range(from, to);
 
     if (error) {
       console.warn("Supabase Error:", error);
+      if (error.message?.includes('exceed_cached_egress_quota') || error.code === '402' || error.message?.includes('restricted')) {
+        setApiRestrictionError(error.message);
+      }
+    } else {
+      setApiRestrictionError(null);
     }
 
     console.log("Fetched Posts:", data);
@@ -728,6 +772,19 @@ export default function MainDashboardClient({
         const likesCount = Array.isArray(p.likes) ? p.likes.length : 0;
         const commentsCount = Array.isArray(p.comments) ? p.comments.length : 0;
         const prof = Array.isArray(p.profiles) ? p.profiles[0] : p.profiles;
+        const isVideoMedia = Boolean(p.video_url) || Boolean(mediaList[0] && /\.(mp4|webm|mov|ogg|m4v)$/i.test(mediaList[0]));
+        const isImageMedia = Boolean(p.image_url) || Boolean(mediaList[0] && /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(mediaList[0]));
+        const resolvedType = p.media_type || (
+          p.type === 'video' || p.type === 'reel' || (p.type && p.type.toString().startsWith('video/')) || isVideoMedia
+            ? (p.type === 'reel' ? 'reel' : 'video')
+            : (p.type === 'photo' || p.type === 'image' || (p.type && p.type.toString().startsWith('image/')) || isImageMedia)
+            ? 'image'
+            : (p.type && p.type !== 'text' ? p.type : (mediaList.length > 0 ? (isVideoMedia ? 'video' : 'image') : 'text'))
+        );
+        const metricViews = Array.isArray(p.post_metrics) ? (p.post_metrics[0]?.view_count ?? 0) : (p.post_metrics?.view_count ?? 0);
+        const rawViews = Array.isArray(p.post_views) ? p.post_views.length : 0;
+        const totalViews = Math.max(Number(metricViews || 0), Number(rawViews || 0));
+
         return {
           id: p.id,
           author: prof?.username || prof?.full_name || `user_${(p.user_id || "").substring(0, 8)}`,
@@ -738,14 +795,15 @@ export default function MainDashboardClient({
           media_url: p.media_url,
           image_url: p.image_url,
           media_urls: mediaList,
-          type: p.media_type || p.type || (p.video_url || (mediaList[0] && mediaList[0].match(/\.(mp4|webm|mov|ogg)$/i)) ? 'video' : (p.image_url || (mediaList[0] && mediaList[0].match(/\.(png|jpe?g|gif|webp)$/i)) ? 'image' : null)),
+          type: resolvedType,
           likes: likesCount,
           comments: Array.isArray(p.comments) ? p.comments : [],
           commentsCount: commentsCount,
           caption: p.content,
-          views: Array.isArray(p.post_views) ? p.post_views.length : 0,
+          views: totalViews,
           savesCount: Array.isArray(p.saved_posts) ? p.saved_posts.length : 0,
           post_views: Array.isArray(p.post_views) ? p.post_views : [],
+          post_metrics: p.post_metrics,
           isLiked: userId && Array.isArray(p.likes) ? p.likes.some((l: any) => l.user_id === userId) : false,
           isBookmarked: userId && Array.isArray(p.saved_posts) ? p.saved_posts.some((s: any) => s.user_id === userId) : false,
           showComments: false,
@@ -858,28 +916,42 @@ export default function MainDashboardClient({
 
   // Real-time Subscriptions Setup
   useEffect(() => {
-    if (!user) return;
-
     const channel = supabase
       .channel('dashboard-realtime-channel')
       .on('broadcast', { event: 'view_increment' }, (payload: any) => {
         if (payload?.payload?.post_id) {
           const { post_id, views } = payload.payload;
-          setPosts(prev => prev.map(p => p.id === post_id ? { ...p, views: views || (p.views + 1) } : p));
+          setPosts(prev => prev.map(p => p.id === post_id ? { ...p, views: typeof views === 'number' ? views : (p.views + 1) } : p));
+          setSelectedProfilePost((prev: any) => (prev && prev.id === post_id ? { ...prev, views: typeof views === 'number' ? views : (prev.views + 1) } : prev));
+          if (user?.id) {
+            setDashboardStats(prev => {
+              const matched = postsRef.current.find(p => p.id === post_id && p.user_id === user.id);
+              if (matched) {
+                return { ...prev, totalViews: prev.totalViews + 1 };
+              }
+              return prev;
+            });
+          }
         }
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
-        fetchNotifications(user.id);
       })
       .subscribe();
 
+    let notifChannel: any = null;
+    if (user?.id) {
+      notifChannel = supabase
+        .channel(`user-notifs-${user.id}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
+          fetchNotifications(user.id);
+        })
+        .subscribe();
+    }
+
     return () => {
       supabase.removeChannel(channel);
+      if (notifChannel) supabase.removeChannel(notifChannel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user?.id]);
 
   // Search logic querying Supabase
   useEffect(() => {
@@ -1160,15 +1232,22 @@ export default function MainDashboardClient({
   const userOwnPosts = posts.filter(p => p.user_id === user?.id);
 
   const profileTabFilteredPosts = userOwnPosts.filter(p => {
-    if (profileTab === 'reels') return p.type === 'reel' || p.type === 'video';
-    if (profileTab === 'videos') return p.type === 'video' || p.type === 'reel';
-    if (profileTab === 'photos') return p.type === 'photo' || p.type === 'image' || (!p.type && p.image);
+    const t = p.type?.toString().toLowerCase() || '';
+    const isVideo = t === 'reel' || t === 'video' || t.startsWith('video/') || Boolean(p.video_url) || Boolean(p.image && /\.(mp4|webm|mov|ogg|m4v)$/i.test(p.image));
+    const isPhoto = t === 'photo' || t === 'image' || t.startsWith('image/') || (!isVideo && Boolean(p.image));
+    if (profileTab === 'reels') return t === 'reel' || isVideo;
+    if (profileTab === 'videos') return isVideo;
+    if (profileTab === 'photos') return isPhoto;
     if (profileTab === 'copyright') return false;
     return true;
   });
 
   // Dedicated Reels Feed from database only
-  const reelsFeed = posts.filter(p => p.type === 'reel' || p.type === 'video');
+  const reelsFeed = posts.filter(p => {
+    const t = p.type?.toString().toLowerCase() || '';
+    const isVideo = t === 'reel' || t === 'video' || t.startsWith('video/') || Boolean(p.video_url) || Boolean(p.image && /\.(mp4|webm|mov|ogg|m4v)$/i.test(p.image));
+    return isVideo;
+  });
 
   // Real Computed User Analytics for Professional Dashboard
   const totalUserPostsCount = dashboardStats.totalPosts;
@@ -1383,6 +1462,21 @@ export default function MainDashboardClient({
         <div className="flex-1 hidden xl:block" />
         <main className="w-full max-w-xl py-2 shrink-0">
         
+        {apiRestrictionError && (
+          <div className="mx-4 mb-4 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex items-start gap-3 shadow-lg">
+            <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <div className="font-bold text-amber-300 text-sm">Database Bandwidth Quota Notice</div>
+              <p className="text-zinc-300 leading-relaxed text-xs">
+                Supabase reported: <code className="text-amber-300 font-mono text-[11px] bg-black/40 px-1 py-0.5 rounded">{apiRestrictionError}</code>
+              </p>
+              <p className="text-zinc-400 text-[11px] leading-relaxed">
+                All user posts, videos, and profile accounts remain safely stored and preserved in your database. To restore live API queries, visit your <strong>Supabase Dashboard → Settings → Usage / Billing</strong> to remove spend caps or reset your bandwidth quota.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* ==================== VIEW MODE 1: GLOBAL HOME FEED ==================== */}
         {viewMode === 'feed' && (
           <FeedPage
@@ -1475,11 +1569,15 @@ export default function MainDashboardClient({
         {viewMode === 'profile' && (() => {
           const isOwner = !viewingProfileUser || viewingProfileUser.id === user?.id;
           const displayProf = isOwner ? profile : viewingProfileUser;
-          const displayUserPosts = posts.filter(p => p.user_id === displayProf?.id);
+          const targetOwnerId = displayProf?.id || (isOwner ? user?.id : null);
+          const displayUserPosts = posts.filter(p => p.user_id === targetOwnerId);
           const displayFilteredPosts = displayUserPosts.filter(p => {
-            if (profileTab === 'reels') return p.type === 'reel' || p.type === 'video';
-            if (profileTab === 'videos') return p.type === 'video' || p.type === 'reel';
-            if (profileTab === 'photos') return p.type === 'photo' || p.type === 'image' || (!p.type && p.image);
+            const t = p.type?.toString().toLowerCase() || '';
+            const isVideo = t === 'reel' || t === 'video' || t.startsWith('video/') || Boolean(p.video_url) || Boolean(p.image && /\.(mp4|webm|mov|ogg|m4v)$/i.test(p.image));
+            const isPhoto = t === 'photo' || t === 'image' || t.startsWith('image/') || (!isVideo && Boolean(p.image));
+            if (profileTab === 'reels') return t === 'reel' || isVideo;
+            if (profileTab === 'videos') return isVideo;
+            if (profileTab === 'photos') return isPhoto;
             return true;
           });
           const displayFollowers = isOwner ? followersCount : viewingProfileStats.followers;
@@ -1832,10 +1930,10 @@ export default function MainDashboardClient({
                         onClick={() => setSelectedProfilePost(p)}
                         className="aspect-square bg-zinc-900 relative rounded-xl overflow-hidden group cursor-pointer border border-zinc-800/50 shadow-sm"
                       >
-                        {p.type === 'video' || p.type === 'reel' ? (
+                        {p.type === 'video' || p.type === 'reel' || (p.type && p.type.toString().startsWith('video/')) || Boolean(p.video_url) || Boolean(mediaSrc && /\.(mp4|webm|mov|ogg|m4v)$/i.test(mediaSrc)) ? (
                           <div className="w-full h-full relative">
                             {mediaSrc ? (
-                              <video src={mediaSrc} className="w-full h-full object-cover pointer-events-none" preload="metadata" />
+                              <video src={`${mediaSrc}#t=0.1`} className="w-full h-full object-cover pointer-events-none" preload="metadata" muted playsInline />
                             ) : null}
                             <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
                               <div className="w-9 h-9 rounded-full bg-black/60 flex items-center justify-center text-white backdrop-blur-sm">
@@ -1851,9 +1949,10 @@ export default function MainDashboardClient({
                           </div>
                         )}
                         <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3 text-white text-xs font-bold backdrop-blur-[2px]">
-                        <span className="flex items-center gap-1"><Heart className="w-3.5 h-3.5 fill-white" /> {p.likes || 0}</span>
-                        <span className="flex items-center gap-1"><MessageCircle className="w-3.5 h-3.5 fill-white" /> {p.commentsCount || 0}</span>
-                      </div>
+                          <span className="flex items-center gap-1"><Heart className="w-3.5 h-3.5 fill-white" /> {p.likes || 0}</span>
+                          <span className="flex items-center gap-1"><MessageCircle className="w-3.5 h-3.5 fill-white" /> {p.commentsCount || 0}</span>
+                          <span className="flex items-center gap-1"><Eye className="w-3.5 h-3.5" /> {(p.views || 0).toLocaleString()}</span>
+                        </div>
                     </div>
                   );
                   })}
@@ -1976,59 +2075,88 @@ export default function MainDashboardClient({
 
             <div className="grid grid-cols-2 gap-3">
               {/* Photo Choice */}
-              <button 
-                onClick={() => {
-                  setCreateMode('photo');
-                  setShowCreateChoiceModal(false);
-                  setShowCreatePost(true);
-                }}
-                className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-2 hover:border-indigo-500 hover:scale-[1.02] transition-all ${
+              <label 
+                className={`cursor-pointer p-4 rounded-xl border flex flex-col items-center justify-center gap-2 hover:border-indigo-500 hover:scale-[1.02] transition-all ${
                   isDarkMode ? 'bg-zinc-900/90 border-zinc-800' : 'bg-zinc-50 border-zinc-200'
                 }`}
               >
+                <input 
+                  type="file"
+                  className="hidden"
+                  accept="image/jpeg,image/jpg,image/png,image/webp"
+                  multiple
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      setCreatePostInitialFiles(Array.from(e.target.files));
+                    }
+                    setCreateMode('photo');
+                    setShowCreateChoiceModal(false);
+                    setShowCreatePost(true);
+                  }}
+                />
                 <div className="p-3 rounded-full bg-blue-500/10 text-blue-400">
                   <ImageIcon className="w-6 h-6" />
                 </div>
                 <span className="font-bold text-sm">Photo</span>
-              </button>
+              </label>
 
               {/* Video Choice */}
-              <button 
-                onClick={() => {
-                  setCreateMode('video');
-                  setShowCreateChoiceModal(false);
-                  setShowCreatePost(true);
-                }}
-                className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-2 hover:border-indigo-500 hover:scale-[1.02] transition-all ${
+              <label 
+                className={`cursor-pointer p-4 rounded-xl border flex flex-col items-center justify-center gap-2 hover:border-indigo-500 hover:scale-[1.02] transition-all ${
                   isDarkMode ? 'bg-zinc-900/90 border-zinc-800' : 'bg-zinc-50 border-zinc-200'
                 }`}
               >
+                <input 
+                  type="file"
+                  className="hidden"
+                  accept="video/mp4,video/quicktime,video/webm"
+                  multiple
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      setCreatePostInitialFiles(Array.from(e.target.files));
+                    }
+                    setCreateMode('video');
+                    setShowCreateChoiceModal(false);
+                    setShowCreatePost(true);
+                  }}
+                />
                 <div className="p-3 rounded-full bg-emerald-500/10 text-emerald-400">
                   <Video className="w-6 h-6" />
                 </div>
                 <span className="font-bold text-sm">Video</span>
-              </button>
+              </label>
 
               {/* Reel Choice */}
-              <button 
-                onClick={() => {
-                  setCreateMode('reel');
-                  setShowCreateChoiceModal(false);
-                  setShowCreatePost(true);
-                }}
-                className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-2 hover:border-indigo-500 hover:scale-[1.02] transition-all ${
+              <label 
+                className={`cursor-pointer p-4 rounded-xl border flex flex-col items-center justify-center gap-2 hover:border-indigo-500 hover:scale-[1.02] transition-all ${
                   isDarkMode ? 'bg-zinc-900/90 border-zinc-800' : 'bg-zinc-50 border-zinc-200'
                 }`}
               >
+                <input 
+                  type="file"
+                  className="hidden"
+                  accept="video/mp4,video/quicktime,video/webm"
+                  multiple
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      setCreatePostInitialFiles(Array.from(e.target.files));
+                    }
+                    setCreateMode('reel');
+                    setShowCreateChoiceModal(false);
+                    setShowCreatePost(true);
+                  }}
+                />
                 <div className="p-3 rounded-full bg-purple-500/10 text-purple-400">
                   <Film className="w-6 h-6" />
                 </div>
                 <span className="font-bold text-sm">Reel</span>
-              </button>
+              </label>
 
               {/* Text Choice */}
               <button 
-                onClick={() => {
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
                   setCreateMode('text');
                   setShowCreateChoiceModal(false);
                   setShowCreatePost(true);
@@ -2818,9 +2946,13 @@ export default function MainDashboardClient({
       {user && (
         <CreatePostModal 
           isOpen={showCreatePost}
-          onClose={() => setShowCreatePost(false)}
+          onClose={() => {
+            setShowCreatePost(false);
+            setCreatePostInitialFiles([]);
+          }}
           user={user}
           initialMode={createMode}
+          initialFiles={createPostInitialFiles}
           onPostCreated={(newPost) => {
             if (newPost) {
               const formattedNewPost = {
@@ -2872,7 +3004,10 @@ export default function MainDashboardClient({
               const isOwner = !(viewingProfileUser) || viewingProfileUser.id === user?.id;
               const displayProf = isOwner ? profile : viewingProfileUser;
               const displayUserPosts = posts.filter(p => p.user_id === displayProf?.id);
-              const profileReels = displayUserPosts.filter(p => p.type === 'reel' || p.type === 'video');
+              const profileReels = displayUserPosts.filter(p => {
+                const t = p.type?.toString().toLowerCase() || '';
+                return t === 'reel' || t === 'video' || t.startsWith('video/');
+              });
               if (profileReels.length === 0) {
                 return <div className="text-center py-12 text-zinc-500">No reels or videos found for this profile.</div>;
               }
@@ -2968,7 +3103,8 @@ export default function MainDashboardClient({
               {(() => {
                 const mediaList = typeof selectedProfilePost.media_url === "string" ? (() => { try { const parsed = JSON.parse(selectedProfilePost.media_url); return Array.isArray(parsed) ? parsed : [parsed]; } catch { return [selectedProfilePost.media_url]; } })() : selectedProfilePost.media_url || [];
                 const mediaSrc = mediaList[0] || selectedProfilePost.image;
-                if (selectedProfilePost.type === 'video' || selectedProfilePost.type === 'reel') {
+                const isVideo = selectedProfilePost.type === 'video' || selectedProfilePost.type === 'reel' || (selectedProfilePost.type && selectedProfilePost.type.toString().startsWith('video/')) || Boolean(selectedProfilePost.video_url) || Boolean(mediaSrc && /\.(mp4|webm|mov|ogg|m4v)$/i.test(mediaSrc));
+                if (isVideo) {
                   return (
                     <VideoPlayer src={mediaSrc} className="w-full h-full max-h-[450px]" autoPlay muted={false} controls={false} playsInline />
                   );
@@ -3011,9 +3147,11 @@ export default function MainDashboardClient({
               ) : (
                 <>
                   <p className="text-sm text-zinc-200 mb-2">{selectedProfilePost.caption}</p>
+                  <ViewTracker type={selectedProfilePost.type || 'post'} id={selectedProfilePost.id} userId={user?.id} />
                   <div className="flex items-center gap-4 text-xs text-zinc-400">
                     <span className="flex items-center gap-1.5"><Heart className="w-4 h-4 text-red-500 fill-red-500" /> {selectedProfilePost.likes || 0} likes</span>
                     <span className="flex items-center gap-1.5"><MessageCircle className="w-4 h-4 text-indigo-400" /> {selectedProfilePost.commentsCount || 0} comments</span>
+                    <span className="flex items-center gap-1.5"><Eye className="w-4 h-4 text-zinc-400" /> {(selectedProfilePost.views || 0).toLocaleString()} views</span>
                   </div>
                 </>
               )}

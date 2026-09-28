@@ -1,8 +1,10 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Share2, Heart, MessageCircle, Eye, Volume2, VolumeX, Sparkles, Check } from 'lucide-react';
+import { ViewTracker } from '../shared/ViewTracker';
+import { supabase } from '@/lib/supabase';
 
 interface PostDetailClientProps {
   post: {
@@ -13,8 +15,10 @@ interface PostDetailClientProps {
     created_at: string;
     updated_at: string;
     views_count?: number;
+    views?: number;
     likes_count?: number;
     post_views?: any[];
+    post_metrics?: any[];
   };
   author?: {
     id?: string;
@@ -37,6 +41,30 @@ export default function PostDetailClient({
   const [copied, setCopied] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(post.likes_count || 0);
+  const [views, setViews] = useState(post.views ?? (Array.isArray(post.post_views) ? post.post_views.length : 0));
+  const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (data?.session?.user) {
+        setCurrentUserId(data.session.user.id);
+      }
+    });
+
+    const channel = supabase
+      .channel('dashboard-realtime-channel')
+      .on('broadcast', { event: 'view_increment' }, (payload: any) => {
+        if (payload?.payload?.post_id === post.id) {
+          const newViews = payload.payload.views;
+          setViews(prev => typeof newViews === 'number' ? newViews : prev + 1);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [post.id]);
 
   const postUrl = `${siteUrl}/post/${post.id}`;
 
@@ -192,9 +220,12 @@ export default function PostDetailClient({
                   />
                   <span className="text-xs font-semibold">{likeCount}</span>
                 </button>
+                <ViewTracker type={post.type || 'post'} id={post.id} userId={currentUserId} />
                 <div className="flex items-center gap-1.5 text-zinc-400">
                   <Eye className="w-5 h-5" />
-                  <span className="text-xs font-semibold">{(Array.isArray(post.post_views) ? post.post_views.length : 0).toLocaleString()} views</span>
+                  <span className="text-xs font-semibold">
+                    {views.toLocaleString()} {views === 1 ? 'view' : 'views'}
+                  </span>
                 </div>
               </div>
               <button

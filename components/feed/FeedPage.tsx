@@ -217,7 +217,7 @@ export function FeedPage({
                   </div>
                 )}
                 <article className={`pb-4 border-b last:border-0 ${isDarkMode ? 'bg-zinc-950 border-zinc-900' : 'bg-white border-zinc-200'} relative`}>
-                <ViewTracker type={post.type === "reel" ? "reel" : post.type === "video" ? "video" : "post"} id={post.id} userId={user?.id} />
+                <ViewTracker type={post.type === "reel" ? "reel" : (post.type === "video" || (post.type && post.type.toString().startsWith('video/')) || Boolean(post.video_url)) ? "video" : "post"} id={post.id} userId={user?.id} />
                 {/* Header */}
                 <div className="px-4 py-3 flex items-center justify-between">
                   <div
@@ -251,6 +251,7 @@ export function FeedPage({
                   const mediaList = typeof post.media_url === "string" ? (() => { try { const p = JSON.parse(post.media_url); return Array.isArray(p) ? p : [p]; } catch { return [post.media_url]; } })() : post.media_url || [];
                   const mediaSrc = mediaList[0] || post.image;
                   if (!mediaSrc) return null;
+                  const isVideo = post.type === 'video' || post.type === 'reel' || (post.type && post.type.toString().startsWith('video/')) || Boolean(post.video_url) || Boolean(mediaSrc && /\.(mp4|webm|mov|ogg|m4v)$/i.test(mediaSrc));
                   return (
                     <div className="aspect-square bg-zinc-900 relative rounded-md overflow-hidden mx-4 my-2 border border-zinc-800/50" onDoubleClick={() => handleDoubleTap(post.id, post.isLiked)}>
                       {heartPopId === post.id && (
@@ -258,7 +259,7 @@ export function FeedPage({
                           <Heart className="w-32 h-32 text-red-500 fill-red-500 animate-heart-pop drop-shadow-[0_0_30px_rgba(239,68,68,0.8)]" />
                         </div>
                       )}
-                      {post.type === 'video' || post.type === 'reel' ? (
+                      {isVideo ? (
                         <div 
                           className="w-full h-full cursor-pointer relative group" 
                           onClick={() => handlePostClick(post.id, post.isLiked)}
@@ -320,7 +321,7 @@ export function FeedPage({
 
                   <div className="font-semibold text-sm mb-1 text-zinc-300">
                     {post.likes.toLocaleString()} likes
-                    {(post.type === "video" || post.type === "reel") && post.views !== undefined && ` • ${post.views.toLocaleString()} views`}
+                    {post.views !== undefined && ` • ${post.views.toLocaleString()} ${post.views === 1 ? 'view' : 'views'}`}
                   </div>
                   <div className="text-sm mb-1">
                     <span

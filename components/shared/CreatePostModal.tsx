@@ -1,6 +1,6 @@
 "use client";
 import Image from "next/image";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { runCopyrightCheck } from "@/lib/copyright";
 import { X, Image as ImageIcon, Video, Loader2, MapPin, Tag, Globe, Lock, Users, ShieldAlert, CheckCircle2, FileText, AlertCircle } from "lucide-react";
@@ -13,6 +13,7 @@ interface CreatePostModalProps {
   user: any;
   onPostCreated?: (post?: any) => void;
   initialMode?: 'photo' | 'video' | 'reel' | 'text';
+  initialFiles?: File[];
 }
 
 const CATEGORIES = [
@@ -39,6 +40,7 @@ export default function CreatePostModal({
   user,
   onPostCreated,
   initialMode = 'text',
+  initialFiles = [],
 }: CreatePostModalProps) {
   const [caption, setCaption] = useState("");
   const [category, setCategory] = useState("General");
@@ -47,7 +49,7 @@ export default function CreatePostModal({
   const [altText, setAltText] = useState("");
   const [visibility, setVisibility] = useState<'public' | 'followers' | 'private'>('public');
 
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<File[]>(initialFiles);
   const [previews, setPreviews] = useState<{ url: string; type: string; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -67,10 +69,7 @@ export default function CreatePostModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<XMLHttpRequest | null>(null);
 
-  if (!isOpen) return null;
-
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = Array.from(e.target.files || []);
+  const processFiles = async (selectedFiles: File[]) => {
     if (!selectedFiles.length) return;
 
     setError(null);
@@ -107,13 +106,37 @@ export default function CreatePostModal({
       })
     );
 
-    setFiles((prev) => [...prev, ...processedFiles]);
+    setFiles((prev) => {
+      const newFiles = [...prev];
+      processedFiles.forEach(pf => {
+        if (!newFiles.find(f => f.name === pf.name && f.size === pf.size)) {
+          newFiles.push(pf);
+        }
+      });
+      return newFiles;
+    });
 
     // Generate previews
     processedFiles.forEach((file) => {
       const url = URL.createObjectURL(file);
-      setPreviews((prev) => [...prev, { url, type: file.type, name: file.name }]);
+      setPreviews((prev) => {
+        if (!prev.find(p => p.name === file.name)) {
+          return [...prev, { url, type: file.type, name: file.name }];
+        }
+        return prev;
+      });
     });
+  };
+
+  useEffect(() => {
+    if (isOpen && initialFiles && initialFiles.length > 0) {
+      processFiles(initialFiles);
+    }
+  }, [isOpen, initialFiles]);
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(e.target.files || []);
+    await processFiles(selectedFiles);
   };
 
   const removeFile = (index: number) => {
@@ -430,6 +453,8 @@ export default function CreatePostModal({
     }
   };
 
+  if (!isOpen) return null;
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
       <div className="bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -694,10 +719,11 @@ export default function CreatePostModal({
                 onChange={handleFileSelect}
                 accept="image/*,video/mp4,video/quicktime,video/webm"
                 multiple
-                className="hidden"
+                className="w-0 h-0 absolute opacity-0 overflow-hidden"
               />
               <button
-                onClick={() => fileInputRef.current?.click()}
+                type="button"
+                onClick={(e) => { e.preventDefault(); fileInputRef.current?.click(); }}
                 className="p-2 bg-zinc-900 hover:bg-zinc-800 rounded-xl transition-colors text-emerald-400 border border-zinc-800 flex items-center gap-1.5 text-xs font-semibold"
                 title="Photo"
               >
@@ -705,7 +731,8 @@ export default function CreatePostModal({
                 <span>Photo</span>
               </button>
               <button
-                onClick={() => fileInputRef.current?.click()}
+                type="button"
+                onClick={(e) => { e.preventDefault(); fileInputRef.current?.click(); }}
                 className="p-2 bg-zinc-900 hover:bg-zinc-800 rounded-xl transition-colors text-indigo-400 border border-zinc-800 flex items-center gap-1.5 text-xs font-semibold"
                 title="Video"
               >

@@ -1,0 +1,31 @@
+        const formattedPosts = data.map((p: any) => {
+          let mediaList: string[] = [];
+          if (p.media_url) {
+            if (Array.isArray(p.media_url)) {
+              mediaList = p.media_url;
+            } else if (typeof p.media_url === 'string') {
+              try {
+                const parsed = JSON.parse(p.media_url);
+                if (Array.isArray(parsed)) mediaList = parsed;
+                else if (typeof parsed === 'string') mediaList = [parsed];
+              } catch {
+                mediaList = [p.media_url];
+              }
+            }
+          }
+          const likesCount = Array.isArray(p.likes) ? p.likes.length : 0;
+          const commentsCount = Array.isArray(p.comments) ? p.comments.length : 0;
+          const prof = Array.isArray(p.profiles) ? p.profiles[0] : p.profiles;
+          return {
+            id: p.id,
+            author: prof?.username || prof?.full_name || `user_${(p.user_id || "").substring(0, 8)}`,
+            handle: `@${prof?.username || 'user'}`,
+            avatar: prof?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp',
+            image: mediaList[0] || null,
+            video_url: p.video_url,
+            media_url: p.media_url,
+            image_url: p.image_url,
+            media_urls: mediaList,
+            type: p.media_type || p.type || (p.video_url || (mediaList[0] && mediaList[0].match(/\.(mp4|webm|mov|ogg)$/i)) ? 'video' : (p.image_url || (mediaList[0] && mediaList[0].match(/\.(png|jpe?g|gif|webp)$/i)) ? 'image' : null)),
+            likes: likesCount,
+            comments: Array.isArray(p.comments) ? p.comments : [],

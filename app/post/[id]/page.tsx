@@ -124,13 +124,20 @@ export default async function PostPage({ params }: Props) {
 
   const { data: post, error } = await supabaseAdmin
     .from('posts')
-    .select('*, profiles:user_id(id, username, full_name, avatar_url), post_views(id)')
+    .select('*, profiles:user_id(id, username, full_name, avatar_url), post_metrics(view_count, reach_count), post_views(id, viewer_id)')
     .eq('id', id)
     .single();
 
   if (error || !post || (post.audience && post.audience !== 'public')) {
     notFound();
   }
+
+  const metricViews = Array.isArray(post.post_metrics) ? (post.post_metrics[0]?.view_count ?? 0) : (post.post_metrics?.view_count ?? 0);
+  const rawViews = Array.isArray(post.post_views) ? post.post_views.length : 0;
+  const postWithViews = {
+    ...post,
+    views: Math.max(Number(metricViews || 0), Number(rawViews || 0))
+  };
 
   const { videoUrl, imageUrl } = extractMediaUrls(post.media_url);
   const author = Array.isArray(post.profiles) ? post.profiles[0] : post.profiles;
@@ -188,7 +195,7 @@ export default async function PostPage({ params }: Props) {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
       <PostDetailClient
-        post={post}
+        post={postWithViews}
         author={author}
         videoUrl={videoUrl}
         imageUrl={imageUrl}

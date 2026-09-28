@@ -1,0 +1,401 @@
+1282-          
+1283-          {/* LEFT: Three-line menu icon + R.mix brand name */}
+1284-          <div className="flex items-center gap-3">
+1285:            <button
+1286-              id="header-menu-button"
+1287-              onClick={() => {
+1288-                setShowMainMenu(!showMainMenu);
+--
+1321-          {/* RIGHT: Search icon + Plus (+) icon */}
+1322-          <div className="flex items-center gap-2">
+1323-            {/* Search Icon */}
+1324:            <button 
+1325-              id="header-search-button"
+1326-              onClick={() => {
+1327-                setViewingProfileUser(null);
+--
+1337-            </button>
+1338-
+1339-            {/* Plus (+) Icon */}
+1340:            <button 
+1341-              id="header-plus-button"
+1342-              onClick={() => setShowCreateChoiceModal(true)}
+1343-              className={`p-2 rounded-full hover:bg-zinc-800/40 transition-colors ${
+--
+1514-                  </div>
+1515-                )}
+1516-                {isOwner ? (
+1517:                  <button
+1518-                    onClick={() => setShowEditProfile(true)}
+1519-                    className="absolute top-3.5 right-3.5 p-2.5 bg-black/70 hover:bg-black/90 rounded-full text-white backdrop-blur-md transition-all border border-white/20 shadow-lg hover:scale-105"
+1520-                    title="Edit Cover Banner"
+--
+1522-                    <Edit3 className="w-4 h-4" />
+1523-                  </button>
+1524-                ) : (
+1525:                  <button
+1526-                    onClick={() => {
+1527-                      setViewingProfileUser(null);
+1528-                      setViewingProfileStats({ followers: 0, following: 0 });
+--
+1551-                      />
+1552-                    </div>
+1553-                    {isOwner && (
+1554:                      <button 
+1555-                        onClick={() => setShowEditProfile(true)}
+1556-                        className="absolute bottom-1 right-1 p-2 rounded-full bg-indigo-600 text-white shadow-lg hover:bg-indigo-500 transition-all border border-zinc-950"
+1557-                        title="Change Photo"
+--
+1644-              {/* 4) Edit Profile Button (Owner) OR Follow Button (Visitor) */}
+1645-              {isOwner ? (
+1646-                <div className="flex gap-2">
+1647:                  <button 
+1648-                    onClick={() => setShowEditProfile(true)} 
+1649-                    className={`flex-1 py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm transition-all border shadow-sm flex items-center justify-center gap-2 ${
+1650-                      isDarkMode 
+--
+1655-                    <Edit3 className="w-4 h-4 text-indigo-400" />
+1656-                    <span>Edit Profile</span>
+1657-                  </button>
+1658:                  <button 
+1659-                    onClick={() => setViewMode('settings')} 
+1660-                    className={`py-2.5 px-3.5 rounded-xl font-bold text-xs sm:text-sm transition-all border shadow-sm ${
+1661-                      isDarkMode 
+--
+1669-                </div>
+1670-              ) : (
+1671-                <div className="flex gap-2">
+1672:                  <button 
+1673-                    onClick={() => toggleFollow(displayProf?.id)} 
+1674-                    className={`flex-1 py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm transition-all border shadow-sm flex items-center justify-center gap-2 ${
+1675-                      isFollowingThisUser 
+--
+1738-              {/* 6) Keep Tabs: Posts | Reels | Photos | Videos */}
+1739-              <div className={`border-t border-b ${isDarkMode ? 'border-zinc-800' : 'border-zinc-200'} pt-1`}>
+1740-                <div className="flex justify-around">
+1741:                  <button 
+1742-                    onClick={() => setProfileTab('posts')}
+1743-                    className={`flex items-center gap-1.5 py-3 px-3 text-xs sm:text-sm font-bold border-b-2 transition-all ${
+1744-                      profileTab === 'posts' 
+--
+1750-                    <span>Posts</span>
+1751-                  </button>
+1752-
+1753:                  <button 
+1754-                    onClick={() => setProfileTab('reels')}
+1755-                    className={`flex items-center gap-1.5 py-3 px-3 text-xs sm:text-sm font-bold border-b-2 transition-all ${
+1756-                      profileTab === 'reels' 
+--
+1762-                    <span>Reels</span>
+1763-                  </button>
+1764-
+1765:                  <button 
+1766-                    onClick={() => setProfileTab('photos')}
+1767-                    className={`flex items-center gap-1.5 py-3 px-3 text-xs sm:text-sm font-bold border-b-2 transition-all ${
+1768-                      profileTab === 'photos' 
+--
+1774-                    <span>Photos</span>
+1775-                  </button>
+1776-
+1777:                  <button 
+1778-                    onClick={() => setProfileTab('videos')}
+1779-                    className={`flex items-center gap-1.5 py-3 px-3 text-xs sm:text-sm font-bold border-b-2 transition-all ${
+1780-                      profileTab === 'videos' 
+--
+1785-                    <Video className="w-4 h-4" />
+1786-                    <span>Videos</span>
+1787-                  </button>
+1788:                  <button 
+1789-                    onClick={() => setProfileTab('copyright')}
+1790-                    className={`flex items-center gap-1.5 py-3 px-3 text-xs sm:text-sm font-bold border-b-2 transition-all ${
+1791-                      profileTab === 'copyright' 
+--
+1802-              {/* Watch Reels/Videos Viewer Button for Profile Reels/Videos tab */}
+1803-              {(profileTab === 'reels' || profileTab === 'videos') && displayFilteredPosts.length > 0 && (
+1804-                <div className="px-4 pt-3">
+1805:                  <button
+1806-                    onClick={() => setShowProfileReelsViewer(true)}
+1807-                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg transition-all"
+1808-                  >
+--
+1889-        <div className="max-w-xl mx-auto px-6 h-12 flex items-center justify-between">
+1890-          
+1891-          {/* Home button always returns to global feed */}
+1892:          <button 
+1893-            onClick={() => {
+1894-              setViewingProfileUser(null);
+1895-              setViewMode('feed');
+--
+1902-          </button>
+1903-
+1904-          {/* Search button opens dedicated Search page */}
+1905:          <button 
+1906-            onClick={() => {
+1907-              setViewingProfileUser(null);
+1908-              setViewMode('search');
+--
+1914-          </button>
+1915-
+1916-          {/* Plus button opens 4 post creator choices */}
+1917:          <button 
+1918-            onClick={() => {
+1919-              setShowCreateChoiceModal(true);
+1920-            }} 
+--
+1925-          </button>
+1926-
+1927-          {/* Reels button opens dedicated Reels page */}
+1928:          <button 
+1929-            onClick={() => {
+1930-              setViewingProfileUser(null);
+1931-              setViewMode('reels');
+--
+1937-          </button>
+1938-
+1939-          {/* Live Broadcast button */}
+1940:          <button 
+1941-            onClick={() => {
+1942-              setViewingProfileUser(null);
+1943-              setViewMode('live');
+--
+1949-          </button>
+1950-          
+1951-          {/* Profile button */}
+1952:          <button 
+1953-            onClick={openMyProfile} 
+1954-            className={`w-7 h-7 rounded-full bg-zinc-800 overflow-hidden border transition-all ${
+1955-              viewMode === 'profile' || viewMode === 'settings' 
+--
+1969-          <div className={`w-full max-w-sm rounded-2xl border p-5 space-y-4 shadow-2xl ${isDarkMode ? 'bg-zinc-950 border-zinc-800 text-white' : 'bg-white border-zinc-200 text-zinc-900'}`}>
+1970-            <div className="flex items-center justify-between pb-2 border-b border-zinc-800">
+1971-              <h3 className="font-bold text-lg">Create New Content</h3>
+1972:              <button onClick={() => setShowCreateChoiceModal(false)} className="p-1 rounded-full hover:bg-zinc-800 text-zinc-400">
+1973-                <X className="w-5 h-5" />
+1974-              </button>
+1975-            </div>
+1976-
+1977-            <div className="grid grid-cols-2 gap-3">
+1978-              {/* Photo Choice */}
+1979:              <button 
+1980-                onClick={() => {
+1981-                  setCreateMode('photo');
+1982-                  setShowCreateChoiceModal(false);
+--
+1993-              </button>
+1994-
+1995-              {/* Video Choice */}
+1996:              <button 
+1997-                onClick={() => {
+1998-                  setCreateMode('video');
+1999-                  setShowCreateChoiceModal(false);
+--
+2010-              </button>
+2011-
+2012-              {/* Reel Choice */}
+2013:              <button 
+2014-                onClick={() => {
+2015-                  setCreateMode('reel');
+2016-                  setShowCreateChoiceModal(false);
+--
+2027-              </button>
+2028-
+2029-              {/* Text Choice */}
+2030:              <button 
+2031-                onClick={() => {
+2032-                  setCreateMode('text');
+2033-                  setShowCreateChoiceModal(false);
+--
+2056-                <Heart className="w-5 h-5 text-red-500 fill-red-500" />
+2057-                <span>Activity & Notifications</span>
+2058-              </h3>
+2059:              <button onClick={() => setShowNotificationsModal(false)} className="p-1 rounded-full hover:bg-zinc-800 text-zinc-400">
+2060-                <X className="w-5 h-5" />
+2061-              </button>
+2062-            </div>
+--
+2094-                <MessageCircle className="w-5 h-5 text-indigo-400" />
+2095-                <span>Direct Messages</span>
+2096-              </h3>
+2097:              <button onClick={() => setShowMessagesModal(false)} className="p-1 rounded-full hover:bg-zinc-800 text-zinc-400">
+2098-                <X className="w-5 h-5" />
+2099-              </button>
+2100-            </div>
+--
+2123-                    <Image width={500} height={500} referrerPolicy="no-referrer" src={selectedChatUser.avatar_url || "https://www.gravatar.com/avatar/?d=mp"} alt="User" className="w-7 h-7 rounded-full" />
+2124-                    <span className="font-bold text-xs">@{selectedChatUser.username}</span>
+2125-                  </div>
+2126:                  <button onClick={() => setSelectedChatUser(null)} className="text-xs text-indigo-400 font-semibold hover:underline">Change</button>
+2127-                </div>
+2128-
+2129-                <div className="flex-1 min-h-[180px] p-3 rounded-xl bg-zinc-900/50 border border-zinc-800/80 overflow-y-auto space-y-2">
+--
+2147-                    onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+2148-                    className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs outline-none text-white placeholder-zinc-500"
+2149-                  />
+2150:                  <button onClick={handleSendMessage} className="p-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white">
+2151-                    <Send className="w-4 h-4" />
+2152-                  </button>
+2153-                </div>
+--
+2183-                  </div>
+2184-                </div>
+2185-              </div>
+2186:              <button 
+2187-                onClick={() => setShowFullDashboard(false)} 
+2188-                className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
+2189-                title="Close Dashboard"
+--
+2194-
+2195-            {/* Dashboard Navigation Tabs */}
+2196-            <div className="flex items-center gap-1 overflow-x-auto pb-2 border-b border-zinc-800/80 no-scrollbar">
+2197:              <button
+2198-                onClick={() => setDashboardTab('overview')}
+2199-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shrink-0 transition-all ${
+2200-                  dashboardTab === 'overview'
+--
+2206-                <span>Overview</span>
+2207-              </button>
+2208-
+2209:              <button
+2210-                onClick={() => setDashboardTab('analytics')}
+2211-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shrink-0 transition-all ${
+2212-                  dashboardTab === 'analytics'
+--
+2218-                <span>Analytics</span>
+2219-              </button>
+2220-
+2221:              <button
+2222-                onClick={() => setDashboardTab('content')}
+2223-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shrink-0 transition-all ${
+2224-                  dashboardTab === 'content'
+--
+2230-                <span>Content</span>
+2231-              </button>
+2232-
+2233:              <button
+2234-                onClick={() => setDashboardTab('audience')}
+2235-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shrink-0 transition-all ${
+2236-                  dashboardTab === 'audience'
+--
+2242-                <span>Audience</span>
+2243-              </button>
+2244-
+2245:              <button
+2246-                onClick={() => setDashboardTab('engagement')}
+2247-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shrink-0 transition-all ${
+2248-                  dashboardTab === 'engagement'
+--
+2254-                <span>Engagement</span>
+2255-              </button>
+2256-
+2257:              <button
+2258-                onClick={() => setDashboardTab('monetization')}
+2259-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shrink-0 transition-all ${
+2260-                  dashboardTab === 'monetization'
+--
+2266-                <span>Monetization</span>
+2267-              </button>
+2268-
+2269:              <button
+2270-                onClick={() => setDashboardTab('recommendations')}
+2271-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shrink-0 transition-all ${
+2272-                  dashboardTab === 'recommendations'
+--
+2299-                        You&apos;ve reached {followersCount >= 1000 && totalUserViewsCount >= 300000 ? "both major milestones" : followersCount >= 1000 ? "1,000 followers" : "300,000 views"}! You are now eligible to apply for monetization.
+2300-                      </p>
+2301-                    </div>
+2302:                    <button 
+2303-                      onClick={() => setDashboardTab('monetization')}
+2304-                      className="px-6 py-2.5 bg-white text-indigo-600 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-zinc-100 transition-all shadow-lg active:scale-95"
+2305-                    >
+--
+2771-                        </div>
+2772-                      </div>
+2773-
+2774:                      <button 
+2775-                        disabled={followersCount < 1000 || totalUserViewsCount < 300000}
+2776-                        className={`w-full py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${
+2777-                          (followersCount >= 1000 && totalUserViewsCount >= 300000)
+--
+2793-                          <p className="text-[10px] text-zinc-500">Add a bank account or PayPal</p>
+2794-                        </div>
+2795-                      </div>
+2796:                      <button onClick={() => setShowPayoutModal(true)} className="text-[10px] font-bold text-indigo-400 hover:underline">Configure</button>
+2797-                    </div>
+2798-                  </div>
+2799-                </div>
+--
+2803-            </div>
+2804-
+2805-            <div className="pt-2 text-center">
+2806:              <button 
+2807-                onClick={() => setShowFullDashboard(false)}
+2808-                className="w-full py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm shadow-lg transition-all"
+2809-              >
+--
+2860-              <Film className="w-5 h-5 text-indigo-400" />
+2861-              <span>{((!viewingProfileUser || viewingProfileUser.id === user?.id) ? profile : viewingProfileUser)?.username || 'Profile'} Reels Viewer</span>
+2862-            </div>
+2863:            <button 
+2864-              onClick={() => setShowProfileReelsViewer(false)}
+2865-              className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white"
+2866-            >
+--
+2938-              <div className="flex items-center gap-2">
+2939-                {selectedProfilePost.user_id === user?.id && (
+2940-                  <>
+2941:                    <button 
+2942-                      onClick={() => handleStartEditPost(selectedProfilePost)}
+2943-                      className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-white flex items-center gap-1 transition-colors"
+2944-                    >
+2945-                      <Edit3 className="w-3.5 h-3.5" />
+2946-                      <span>Edit</span>
+2947-                    </button>
+2948:                    <button 
+2949-                      onClick={() => handleDeletePost(selectedProfilePost.id)}
+2950-                      className="px-3 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-xs font-semibold text-red-400 flex items-center gap-1 transition-colors"
+2951-                    >
+--
+2954-                    </button>
+2955-                  </>
+2956-                )}
+2957:                <button 
+2958-                  onClick={() => { setSelectedProfilePost(null); setIsEditingPostModal(false); }}
+2959-                  className="p-1.5 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
+2960-                >
+--
+2994-                    rows={3}
+2995-                  />
+2996-                  <div className="flex items-center justify-end gap-2">
+2997:                    <button 
+2998-                      onClick={() => setIsEditingPostModal(false)}
+2999-                      className="px-3 py-1.5 rounded-lg bg-zinc-800 text-xs font-medium text-zinc-300 hover:bg-zinc-700"
+3000-                    >
+3001-                      Cancel
+3002-                    </button>
+3003:                    <button 
+3004-                      onClick={handleSaveEditPost}
+3005-                      className="px-4 py-1.5 rounded-lg bg-indigo-600 text-xs font-bold text-white hover:bg-indigo-500"
+3006-                    >
+--
+3053-                <CreditCard className="w-5 h-5 text-indigo-400" />
+3054-                <span>Payout & Bank Account Setup (All Countries)</span>
+3055-              </h3>
+3056:              <button onClick={() => setShowPayoutModal(false)} className="p-1 rounded-full bg-zinc-900 text-zinc-400 hover:text-white">
+3057-                <X className="w-5 h-5" />
+3058-              </button>
+3059-            </div>
+--
+3179-              </div>
+3180-
+3181-              <div className="pt-2 flex items-center gap-3">
+3182:                <button 
+3183-                  onClick={() => setShowPayoutModal(false)}
+3184-                  className="flex-1 py-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 font-bold text-xs text-zinc-300"
+3185-                >
+3186-                  Cancel
+3187-                </button>
+3188:                <button 
+3189-                  onClick={handleSavePayout}
+3190-                  disabled={payoutSaving}
+3191-                  className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-bold text-xs text-white shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2"
