@@ -854,26 +854,40 @@ export default function MainDashboardClient({
         };
       });
       
-      const rankedPosts = await rankAndPersonalizePosts(supabase, formattedPosts, userId || user?.id || null);
-
+      // 1. Immediately render core existing posts without waiting for recommendation ranking
       if (isLoadMore) {
         setPosts(prev => {
           const newPosts = [...prev];
-          rankedPosts.forEach(p => {
+          formattedPosts.forEach(p => {
             if (!newPosts.find(np => np.id === p.id)) newPosts.push(p);
           });
           return newPosts;
         });
         setHasMorePosts(postsData.length === POSTS_LIMIT);
       } else {
-        setPosts(rankedPosts);
+        setPosts(formattedPosts);
         if (pageIndex === 0) {
           setHasMorePosts(postsData.length === POSTS_LIMIT);
         }
       }
+      setLoading(false);
+      setIsLoadingMore(false);
+
+      // 2. Optional background recommendation ranking (never blocks or removes core posts)
+      try {
+        const ranked = await rankAndPersonalizePosts(supabase, formattedPosts, userId || user?.id || null);
+        if (Array.isArray(ranked) && ranked.length > 0) {
+          if (!isLoadMore && pageIndex === 0) {
+            setPosts(ranked);
+          }
+        }
+      } catch (recErr) {
+        console.warn("Recommendation ranking warning (core posts preserved):", recErr);
+      }
+    } else {
+      setLoading(false);
+      setIsLoadingMore(false);
     }
-    setLoading(false);
-    setIsLoadingMore(false);
   };
 
   useEffect(() => {
