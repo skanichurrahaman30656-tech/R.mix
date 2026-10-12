@@ -1,7 +1,7 @@
 "use client";
 import Image from "next/image";
 import { useState, useRef, useEffect } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase, supabaseUrl, supabaseAnonKey } from "@/lib/supabase";
 import { runCopyrightCheck } from "@/lib/copyright";
 import { X, Image as ImageIcon, Video, Loader2, MapPin, Tag, Globe, Lock, Users, ShieldAlert, CheckCircle2, FileText, AlertCircle } from "lucide-react";
 import { compressImage } from "@/lib/compress";
@@ -151,8 +151,8 @@ export default function CreatePostModal({
     const isVideo = file.type.startsWith("video/");
     const isLarge = file.size > 5 * 1024 * 1024; // 5MB threshold for Resumable TUS
 
-    const supabaseUrl = (supabase as any).supabaseUrl || process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://grkqbppgimklpyhrvqob.supabase.co';
-    const supabaseKey = (supabase as any).supabaseKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_gq-z20iCbR83jVFbOiwWzw_k-U8yx9O';
+    const currentSupabaseUrl = supabaseUrl;
+    const supabaseKey = supabaseAnonKey;
     
     // Retrieve current active user session token for authenticated RLS owner mapping
     const { data: { session } } = await supabase.auth.getSession();
@@ -173,7 +173,7 @@ export default function CreatePostModal({
         const startTime = Date.now();
 
         const upload = new tus.Upload(file, {
-          endpoint: `${supabaseUrl}/storage/v1/upload/resumable`,
+          endpoint: `${currentSupabaseUrl}/storage/v1/upload/resumable`,
           retryDelays: [0, 3000, 5000, 10000, 20000],
           headers: {
             authorization: `Bearer ${userToken}`,

@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
+import { supabaseUrl, supabaseAnonKey } from '@/lib/supabase';
 import { 
   Radio, Video, VideoOff, Mic, MicOff, Send, Users, 
   X, MessageSquare, AlertCircle, Heart, Flame, Play,
@@ -137,11 +138,11 @@ export function LivePage({ user, profile, isDarkMode, supabase, onClose, initial
   useEffect(() => {
     const handleUnloadCleanup = () => {
       if (isHost && activeSession) {
-        const supabaseUrl = (supabase as any).supabaseUrl || process.env.NEXT_PUBLIC_SUPABASE_URL;
-        const supabaseKey = (supabase as any).supabaseKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-        if (supabaseUrl && supabaseKey) {
+        const targetUrl = supabaseUrl;
+        const targetKey = supabaseAnonKey;
+        if (targetUrl && targetKey) {
           const headers = new Headers();
-          headers.append("apikey", supabaseKey);
+          headers.append("apikey", targetKey);
           headers.append("Authorization", `Bearer ${userTokenRef.current || ""}`);
           headers.append("Content-Type", "application/json");
           

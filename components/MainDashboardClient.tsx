@@ -48,7 +48,11 @@ export default function MainDashboardClient({
   const router = useRouter();
   const [posts, setPosts] = useState<any[]>([]);
   const postsRef = useRef(posts);
-  useEffect(() => { postsRef.current = posts; }, [posts]);
+  useEffect(() => {
+    postsRef.current = posts;
+    // DIAGNOSTIC (CHECKPOINT F): Observe committed posts state in React
+    console.log(`[FEED_DIAG][COMMITTED_POSTS] Count: ${posts.length}, IDs:`, posts.map(p => p.id));
+  }, [posts]);
   const [page, setPage] = useState(0);
   const pageRef = useRef(page);
   useEffect(() => { pageRef.current = page; }, [page]);
@@ -737,7 +741,11 @@ export default function MainDashboardClient({
     }
   };
   
-  const fetchPosts = async (userId?: string, pageIndex = pageRef.current, isLoadMore = false, forceRefresh = false) => {
+  const fetchPosts = async (userId?: string, pageIndex = pageRef.current, isLoadMore = false, forceRefresh = false, invocationReason = 'unspecified') => {
+    const invId = Math.random().toString(36).substring(2, 8);
+    // DIAGNOSTIC (CHECKPOINT A): fetchPosts entry
+    console.log(`[FEED_DIAG][ENTRY] invId=${invId} reason=${invocationReason} hasUserId=${Boolean(userId)} isLoadMore=${isLoadMore} pageIndex=${pageIndex}`);
+
     if (isLoadMore) setIsLoadingMore(true);
     else if (postsRef.current.length === 0) setLoading(true);
 
@@ -762,6 +770,9 @@ export default function MainDashboardClient({
       .order('created_at', { ascending: false })
       .range(from, to);
 
+    // DIAGNOSTIC (CHECKPOINT B): Supabase primary query resolved
+    console.log(`[FEED_DIAG][QUERY_RESOLVED] invId=${invId} primaryError=${Boolean(error)} rowCount=${data ? data.length : 0} errorMsg=${error ? (error.message || String(error)) : 'none'}`);
+
     if (error || !data) {
       console.warn("Primary post query failed; using safe core-post fallback.", error);
       if (error?.message?.includes('exceed_cached_egress_quota') || error?.code === '402' || error?.message?.includes('restricted')) {
@@ -781,6 +792,9 @@ export default function MainDashboardClient({
         .order('created_at', { ascending: false })
         .range(from, to);
 
+      // DIAGNOSTIC (CHECKPOINT B): Fallback query resolved
+      console.log(`[FEED_DIAG][FALLBACK_RESOLVED] invId=${invId} fallbackError=${Boolean(fallbackError)} rowCount=${fallbackData ? fallbackData.length : 0} errorMsg=${fallbackError ? (fallbackError.message || String(fallbackError)) : 'none'}`);
+
       if (fallbackError) {
         console.error("Fallback post query error:", fallbackError);
       } else if (fallbackData) {
@@ -792,68 +806,80 @@ export default function MainDashboardClient({
       setApiRestrictionError(null);
     }
 
-    console.log("Fetched Posts:", postsData);
-
     if (postsData) {
-      const formattedPosts = postsData.map((p: any) => {
-        let mediaList: string[] = [];
-        if (p.media_url) {
-          if (Array.isArray(p.media_url)) {
-            mediaList = p.media_url;
-          } else if (typeof p.media_url === 'string') {
-            try {
-              const parsed = JSON.parse(p.media_url);
-              if (Array.isArray(parsed)) mediaList = parsed;
-              else if (typeof parsed === 'string') mediaList = [parsed];
-            } catch {
-              mediaList = [p.media_url];
+      // DIAGNOSTIC (CHECKPOINT C): Before postsData.map
+      console.log(`[FEED_DIAG][BEFORE_MAP] invId=${invId} rowCount=${postsData.length}`);
+
+      let formattedPosts: any[] = [];
+      try {
+        formattedPosts = postsData.map((p: any) => {
+          let mediaList: string[] = [];
+          if (p.media_url) {
+            if (Array.isArray(p.media_url)) {
+              mediaList = p.media_url;
+            } else if (typeof p.media_url === 'string') {
+              try {
+                const parsed = JSON.parse(p.media_url);
+                if (Array.isArray(parsed)) mediaList = parsed;
+                else if (typeof parsed === 'string') mediaList = [parsed];
+              } catch {
+                mediaList = [p.media_url];
+              }
             }
           }
-        }
-        const likesCount = Array.isArray(p.likes) ? p.likes.length : 0;
-        const commentsCount = Array.isArray(p.comments) ? p.comments.length : 0;
-        const prof = Array.isArray(p.profiles) ? p.profiles[0] : p.profiles;
-        const isVideoMedia = Boolean(p.video_url) || Boolean(mediaList[0] && /\.(mp4|webm|mov|ogg|m4v)$/i.test(mediaList[0]));
-        const isImageMedia = Boolean(p.image_url) || Boolean(mediaList[0] && /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(mediaList[0]));
-        const resolvedType = p.media_type || (
-          p.type === 'video' || p.type === 'reel' || (p.type && p.type.toString().startsWith('video/')) || isVideoMedia
-            ? (p.type === 'reel' ? 'reel' : 'video')
-            : (p.type === 'photo' || p.type === 'image' || (p.type && p.type.toString().startsWith('image/')) || isImageMedia)
-            ? 'image'
-            : (p.type && p.type !== 'text' ? p.type : (mediaList.length > 0 ? (isVideoMedia ? 'video' : 'image') : 'text'))
-        );
-        const metricViews = Array.isArray(p.post_metrics) ? (p.post_metrics[0]?.view_count ?? 0) : (p.post_metrics?.view_count ?? 0);
-        const rawViews = Array.isArray(p.post_views) ? p.post_views.length : 0;
-        const totalViews = Math.max(Number(metricViews || 0), Number(rawViews || 0));
+          const likesCount = Array.isArray(p.likes) ? p.likes.length : 0;
+          const commentsCount = Array.isArray(p.comments) ? p.comments.length : 0;
+          const prof = Array.isArray(p.profiles) ? p.profiles[0] : p.profiles;
+          const isVideoMedia = Boolean(p.video_url) || Boolean(mediaList[0] && /\.(mp4|webm|mov|ogg|m4v)$/i.test(mediaList[0]));
+          const isImageMedia = Boolean(p.image_url) || Boolean(mediaList[0] && /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(mediaList[0]));
+          const resolvedType = p.media_type || (
+            p.type === 'video' || p.type === 'reel' || (p.type && p.type.toString().startsWith('video/')) || isVideoMedia
+              ? (p.type === 'reel' ? 'reel' : 'video')
+              : (p.type === 'photo' || p.type === 'image' || (p.type && p.type.toString().startsWith('image/')) || isImageMedia)
+              ? 'image'
+              : (p.type && p.type !== 'text' ? p.type : (mediaList.length > 0 ? (isVideoMedia ? 'video' : 'image') : 'text'))
+          );
+          const metricViews = Array.isArray(p.post_metrics) ? (p.post_metrics[0]?.view_count ?? 0) : (p.post_metrics?.view_count ?? 0);
+          const rawViews = Array.isArray(p.post_views) ? p.post_views.length : 0;
+          const totalViews = Math.max(Number(metricViews || 0), Number(rawViews || 0));
 
-        return {
-          id: p.id,
-          author: prof?.username || prof?.full_name || `user_${(p.user_id || "").substring(0, 8)}`,
-          handle: `@${prof?.username || 'user'}`,
-          avatar: prof?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp',
-          image: mediaList[0] || null,
-          video_url: p.video_url,
-          media_url: p.media_url,
-          image_url: p.image_url,
-          media_urls: mediaList,
-          type: resolvedType,
-          likes: likesCount,
-          comments: Array.isArray(p.comments) ? p.comments : [],
-          commentsCount: commentsCount,
-          caption: p.content,
-          views: totalViews,
-          savesCount: Array.isArray(p.saved_posts) ? p.saved_posts.length : 0,
-          post_views: Array.isArray(p.post_views) ? p.post_views : [],
-          post_metrics: p.post_metrics,
-          isLiked: userId && Array.isArray(p.likes) ? p.likes.some((l: any) => l.user_id === userId) : false,
-          isBookmarked: userId && Array.isArray(p.saved_posts) ? p.saved_posts.some((s: any) => s.user_id === userId) : false,
-          showComments: false,
-          newComment: '',
-          user_id: p.user_id,
-          created_at: p.created_at
-        };
-      });
-      
+          return {
+            id: p.id,
+            author: prof?.username || prof?.full_name || `user_${(p.user_id || "").substring(0, 8)}`,
+            handle: `@${prof?.username || 'user'}`,
+            avatar: prof?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp',
+            image: mediaList[0] || null,
+            video_url: p.video_url,
+            media_url: p.media_url,
+            image_url: p.image_url,
+            media_urls: mediaList,
+            type: resolvedType,
+            likes: likesCount,
+            comments: Array.isArray(p.comments) ? p.comments : [],
+            commentsCount: commentsCount,
+            caption: p.content,
+            views: totalViews,
+            savesCount: Array.isArray(p.saved_posts) ? p.saved_posts.length : 0,
+            post_views: Array.isArray(p.post_views) ? p.post_views : [],
+            post_metrics: p.post_metrics,
+            isLiked: userId && Array.isArray(p.likes) ? p.likes.some((l: any) => l.user_id === userId) : false,
+            isBookmarked: userId && Array.isArray(p.saved_posts) ? p.saved_posts.some((s: any) => s.user_id === userId) : false,
+            showComments: false,
+            newComment: '',
+            user_id: p.user_id,
+            created_at: p.created_at
+          };
+        });
+      } catch (mapErr: any) {
+        // DIAGNOSTIC (CHECKPOINT E): Exception during post formatting/mapping
+        console.error(`[FEED_DIAG][MAP_EXCEPTION] invId=${invId} name=${mapErr?.name || 'Error'} msg=${mapErr?.message || String(mapErr)}`);
+        throw mapErr;
+      }
+
+      // DIAGNOSTIC (CHECKPOINT C & D): After map & immediately before setPosts
+      console.log(`[FEED_DIAG][AFTER_MAP] invId=${invId} formattedCount=${formattedPosts.length}`);
+      console.log(`[FEED_DIAG][BEFORE_SET_POSTS] invId=${invId} submittingCount=${formattedPosts.length} isLoadMore=${isLoadMore}`);
+
       // 1. Immediately render core existing posts without waiting for recommendation ranking
       if (isLoadMore) {
         setPosts(prev => {
@@ -897,7 +923,7 @@ export default function MainDashboardClient({
       setUser(currentUser);
       
       if (!currentUser) {
-        fetchPosts();
+        fetchPosts(undefined, undefined, false, false, 'checkUser_unauthenticated');
         fetchStories();
         fetchSuggestedUsers();
         return;
@@ -929,7 +955,7 @@ export default function MainDashboardClient({
         setProfile(data);
       }
 
-      fetchPosts(uid);
+      fetchPosts(uid, undefined, false, false, 'checkUser_authenticated');
       fetchDashboardStats(uid);
       fetchStories(uid);
       fetchFollowData(uid);
@@ -951,7 +977,7 @@ export default function MainDashboardClient({
             .eq('id', currentUser.id)
             .single()
             .then(({ data }) => setProfile(data));
-          fetchPosts(currentUser.id);
+          fetchPosts(currentUser.id, undefined, false, false, `onAuthStateChange_${_event}`);
           fetchDashboardStats(currentUser.id);
           fetchFollowData(currentUser.id);
           fetchSuggestedUsers(currentUser.id);
@@ -960,7 +986,7 @@ export default function MainDashboardClient({
         } else {
           setProfile(null);
           setViewingProfileUser(null);
-          fetchPosts();
+          fetchPosts(undefined, undefined, false, false, `onAuthStateChange_${_event}_signedOut`);
           fetchStories();
           fetchSuggestedUsers();
         }
@@ -1535,39 +1561,43 @@ export default function MainDashboardClient({
         )}
 
         {/* ==================== VIEW MODE 1: GLOBAL HOME FEED ==================== */}
-        {viewMode === 'feed' && (
-          <FeedPage
-            posts={posts}
-            hasMorePosts={hasMorePosts}
-            isLoadingMore={isLoadingMore}
-            loadMoreRef={loadMoreRef}
-            isDarkMode={isDarkMode}
-            user={user}
-            profile={profile}
-            followedUsers={followedUsers}
-            storyUploading={storyUploading}
-            storyInputRef={storyInputRef}
-            handleLike={handleLike}
-            handleToggleComments={handleToggleComments}
-            handleShare={handleShare}
-            handleBookmark={handleBookmark}
-            toggleFollow={toggleFollow}
-            openUserProfile={openUserProfile}
-            handleCommentChange={handleCommentChange}
-            submitComment={submitComment}
-            stories={stories}
-            handleStoryClick={handleStoryClick}
-            activeLiveSessions={activeLiveSessions}
-            onJoinLive={(session: any) => {
-              setSelectedLiveSession(session);
-              setViewMode('live');
-            }}
-            onVideoTap={(postId: string) => {
-              setActiveReelId(postId);
-              setViewMode('reels');
-            }}
-          />
-        )}
+        {viewMode === 'feed' && (() => {
+          // DIAGNOSTIC (CHECKPOINT G): FeedPage render boundary
+          console.log(`[FEED_DIAG][FEEDPAGE_RENDER] postsLength=${posts.length} loading=${loading} isLoadingMore=${isLoadingMore}`);
+          return (
+            <FeedPage
+              posts={posts}
+              hasMorePosts={hasMorePosts}
+              isLoadingMore={isLoadingMore}
+              loadMoreRef={loadMoreRef}
+              isDarkMode={isDarkMode}
+              user={user}
+              profile={profile}
+              followedUsers={followedUsers}
+              storyUploading={storyUploading}
+              storyInputRef={storyInputRef}
+              handleLike={handleLike}
+              handleToggleComments={handleToggleComments}
+              handleShare={handleShare}
+              handleBookmark={handleBookmark}
+              toggleFollow={toggleFollow}
+              openUserProfile={openUserProfile}
+              handleCommentChange={handleCommentChange}
+              submitComment={submitComment}
+              stories={stories}
+              handleStoryClick={handleStoryClick}
+              activeLiveSessions={activeLiveSessions}
+              onJoinLive={(session: any) => {
+                setSelectedLiveSession(session);
+                setViewMode('live');
+              }}
+              onVideoTap={(postId: string) => {
+                setActiveReelId(postId);
+                setViewMode('reels');
+              }}
+            />
+          );
+        })()}
         {/* ==================== VIEW MODE 2: DEDICATED SEARCH PAGE ==================== */}
         {viewMode === 'search' && (
           <SearchPage
