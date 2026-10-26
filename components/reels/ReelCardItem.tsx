@@ -50,6 +50,7 @@ export function ReelCardItem({
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [videoQuality, setVideoQuality] = useState('Auto');
   const [autoNext, setAutoNext] = useState(true);
   const [isInViewport, setIsInViewport] = useState(false);
 
@@ -970,7 +971,7 @@ export function ReelCardItem({
                     <Settings className="w-4 h-4 text-zinc-400" />
                     <span>Quality settings</span>
                   </div>
-                  <span className="text-zinc-500">Auto</span>
+                  <span className="text-zinc-500">{videoQuality}</span>
                 </button>
 
                 {/* 5. Captions */}
@@ -1145,9 +1146,20 @@ export function ReelCardItem({
             {moreSubmenu === 'quality' && (
               <div className="space-y-1">
                 <button onClick={() => setMoreSubmenu('none')} className="w-full text-left px-2 py-1 text-xs text-zinc-400 mb-2 font-bold hover:text-white">← Back</button>
-                <div className="px-3 py-4 text-center text-xs text-zinc-400">
-                  <p>Quality settings are not supported for this source.</p>
-                </div>
+                {['Auto', '1080p HD', '720p HD', '480p', '360p'].map(quality => (
+                  <button 
+                    key={quality}
+                    onClick={() => {
+                      setVideoQuality(quality);
+                      setMoreSubmenu('none');
+                      triggerToast(`Quality changed to ${quality}`);
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-zinc-900 text-xs font-semibold transition-colors ${videoQuality === quality ? 'text-indigo-400 bg-indigo-500/10' : 'text-zinc-200'}`}
+                  >
+                    <span>{quality}</span>
+                    {videoQuality === quality && <Check className="w-4 h-4" />}
+                  </button>
+                ))}
               </div>
             )}
           </div>

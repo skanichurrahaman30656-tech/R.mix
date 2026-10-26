@@ -47,6 +47,7 @@ export default function MainDashboardClient({
 }: MainDashboardClientProps = {}) {
   const router = useRouter();
   const [posts, setPosts] = useState<any[]>([]);
+  const [profilePosts, setProfilePosts] = useState<any[]>([]);
   const postsRef = useRef(posts);
   useEffect(() => {
     postsRef.current = posts;
@@ -419,15 +420,7 @@ export default function MainDashboardClient({
           };
         });
 
-        setPosts(prev => {
-          const newPosts = [...prev];
-          formattedPosts.forEach(fp => {
-            if (!newPosts.find(np => np.id === fp.id)) {
-              newPosts.push(fp);
-            }
-          });
-          return newPosts;
-        });
+        setProfilePosts(formattedPosts);
       }
     } catch (err) {
       console.warn("Error fetching profile posts:", err);
@@ -435,7 +428,11 @@ export default function MainDashboardClient({
   };
 
   const openMyProfile = () => {
-    if (user?.id) fetchProfilePosts(user.id);
+    if (user?.id) {
+      fetchProfilePosts(user.id);
+      fetchDashboardStats(user.id);
+      fetchFollowData(user.id);
+    }
     setViewingProfileUser(null);
     setViewingProfileStats({ followers: 0, following: 0 });
     setViewMode('profile');
@@ -1526,6 +1523,8 @@ export default function MainDashboardClient({
         {showMainMenu && (
           <MainMenuPanel
             profile={profile}
+            user={user}
+            supabase={supabase}
             isDarkMode={isDarkMode}
             onNavigateToProfile={() => {
               setShowMainMenu(false);
@@ -1539,6 +1538,10 @@ export default function MainDashboardClient({
             onNavigateToSettings={() => {
               setShowMainMenu(false);
               setViewMode('settings');
+            }}
+            onOpenDashboard={() => {
+              setShowMainMenu(false);
+              setShowFullDashboard(true);
             }}
           />
         )}
@@ -1657,7 +1660,7 @@ export default function MainDashboardClient({
           const isOwner = !viewingProfileUser || viewingProfileUser.id === user?.id;
           const displayProf = isOwner ? profile : viewingProfileUser;
           const targetOwnerId = displayProf?.id || (isOwner ? user?.id : null);
-          const displayUserPosts = posts.filter(p => p.user_id === targetOwnerId);
+          const displayUserPosts = profilePosts;
           const displayFilteredPosts = displayUserPosts.filter(p => {
             const t = p.type?.toString().toLowerCase() || '';
             const isVideo = t === 'reel' || t === 'video' || t.startsWith('video/') || Boolean(p.video_url) || Boolean(p.image && /\.(mp4|webm|mov|ogg|m4v)$/i.test(p.image));
@@ -1670,9 +1673,22 @@ export default function MainDashboardClient({
           const displayFollowers = isOwner ? followersCount : viewingProfileStats.followers;
           const displayFollowing = isOwner ? followingCount : viewingProfileStats.following;
           const displayPostsCount = displayUserPosts.length;
-          const displayTotalViews = isOwner ? totalUserViewsCount : (viewingProfileStats.views || 0);
-          const displayTotalReach = isOwner ? estimatedReachCount : (viewingProfileStats.reach || 0);
-          const displayTotalEngagement = isOwner ? userEngagementRate : (viewingProfileStats.engagement || 0);
+
+          let compViews = 0, compLikes = 0, compComments = 0;
+          let reachSet = new Set();
+          displayUserPosts.forEach(p => {
+            compViews += Number(p.views || 0);
+            compLikes += Number(p.likes || 0);
+            compComments += Number(p.commentsCount || 0);
+            if (p.user_id) reachSet.add(p.user_id);
+            if (p.post_views && Array.isArray(p.post_views)) {
+              p.post_views.forEach((v: any) => { if (v.viewer_id) reachSet.add(v.viewer_id); });
+            }
+          });
+          const displayTotalViews = isOwner ? Math.max(dashboardStats.totalViews, compViews) : (viewingProfileStats.views || compViews);
+          const displayTotalReach = isOwner ? Math.max(dashboardStats.reach, reachSet.size) : (viewingProfileStats.reach || reachSet.size);
+          const calculatedEngagement = displayTotalViews > 0 ? (((compLikes + compComments) / displayTotalViews) * 100) : 0;
+          const displayTotalEngagement = isOwner ? (dashboardStats.totalViews > 0 ? userEngagementRate : calculatedEngagement) : (viewingProfileStats.engagement || calculatedEngagement);
           const isFollowingThisUser = followedUsers[displayProf?.id] || followedUsers[displayProf?.username] || false;
 
           return (
@@ -1747,10 +1763,14 @@ export default function MainDashboardClient({
                   </div>
 
                   {/* Account Type Badge */}
-                  <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 shadow-sm flex items-center gap-1.5">
+                  <button 
+                    onClick={() => setShowFullDashboard(true)}
+                    className="text-[11px] font-bold px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 shadow-sm flex items-center gap-1.5 cursor-pointer hover:bg-indigo-500/20 transition-all"
+                    title="Open Creator Professional Dashboard"
+                  >
                     <Briefcase className="w-3 h-3" />
                     <span>Creator Account</span>
-                  </span>
+                  </button>
                 </div>
 
               {/* Display Name, Username, Verification Badge, Bio, Website, Location */}
@@ -1758,7 +1778,7 @@ export default function MainDashboardClient({
                 <div>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <h1 className="text-xl sm:text-2xl font-black tracking-tight">
-                      {displayProf?.full_name || displayProf?.username || (displayProf?.id ? `user_${displayProf.id.substring(0, 8)}` : "Member Name")}
+                      {displayProf?.full_name || displayProf?.username || user?.user_metadata?.full_name || (user?.email ? user.email.split('@')[0] : null) || (displayProf?.id ? `user_${displayProf.id.substring(0, 8)}` : "Member Name")}
                     </h1>
                     {displayProf?.is_verified && (
                       <span className="inline-flex items-center text-blue-500" title="Verified Creator Account">
@@ -2087,16 +2107,16 @@ export default function MainDashboardClient({
             <Home className="w-7 h-7" />
           </button>
 
-          {/* Search button opens dedicated Search page */}
+          {/* Reels button opens dedicated Reels page */}
           <button 
             onClick={() => {
               setViewingProfileUser(null);
-              setViewMode('search');
+              setViewMode('reels');
             }} 
-            className={`hover:opacity-70 transition-opacity ${viewMode === 'search' ? 'opacity-100 text-indigo-400' : 'opacity-50'}`}
-            title="Search"
+            className={`hover:opacity-70 transition-opacity ${viewMode === 'reels' ? 'opacity-100 text-indigo-400' : 'opacity-50'}`}
+            title="Reels"
           >
-            <Search className="w-7 h-7" />
+            <PlaySquare className="w-7 h-7" />
           </button>
 
           {/* Plus button opens 4 post creator choices */}
@@ -2108,18 +2128,6 @@ export default function MainDashboardClient({
             title="Create Post"
           >
             <PlusSquare className="w-7 h-7" />
-          </button>
-
-          {/* Reels button opens dedicated Reels page */}
-          <button 
-            onClick={() => {
-              setViewingProfileUser(null);
-              setViewMode('reels');
-            }} 
-            className={`hover:opacity-70 transition-opacity ${viewMode === 'reels' ? 'opacity-100 text-indigo-400' : 'opacity-50'}`}
-            title="Reels"
-          >
-            <PlaySquare className="w-7 h-7" />
           </button>
 
           {/* Live Broadcast button */}
