@@ -3,7 +3,7 @@ import Image from "next/image";
 import { useState, useRef, useEffect } from "react";
 import { supabase, supabaseUrl, supabaseAnonKey } from "@/lib/supabase";
 import { runCopyrightCheck } from "@/lib/copyright";
-import { X, Image as ImageIcon, Video, Loader2, MapPin, Tag, Globe, Lock, Users, ShieldAlert, CheckCircle2, FileText, AlertCircle } from "lucide-react";
+import { X, Image as ImageIcon, Video, Loader2, MapPin, Tag, Globe, Lock, Users, ShieldAlert, CheckCircle2, FileText, AlertCircle, Camera, Music, Volume2, VolumeX, Trash2 } from "lucide-react";
 import { compressImage } from "@/lib/compress";
 import * as tus from "tus-js-client";
 
@@ -14,6 +14,8 @@ interface CreatePostModalProps {
   onPostCreated?: (post?: any) => void;
   initialMode?: 'photo' | 'video' | 'reel' | 'text';
   initialFiles?: File[];
+  initialAudioFile?: File | null;
+  onOpenCamera?: () => void;
 }
 
 const CATEGORIES = [
@@ -41,6 +43,8 @@ export default function CreatePostModal({
   onPostCreated,
   initialMode = 'text',
   initialFiles = [],
+  initialAudioFile = null,
+  onOpenCamera,
 }: CreatePostModalProps) {
   const [caption, setCaption] = useState("");
   const [category, setCategory] = useState("General");
@@ -51,6 +55,8 @@ export default function CreatePostModal({
 
   const [files, setFiles] = useState<File[]>(initialFiles);
   const [previews, setPreviews] = useState<{ url: string; type: string; name: string }[]>([]);
+  const [audioFile, setAudioFile] = useState<File | null>(initialAudioFile || null);
+  const [audioPreviewUrl, setAudioPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState("");
@@ -67,7 +73,15 @@ export default function CreatePostModal({
   const [copyrightConfirmed, setCopyrightConfirmed] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const audioFileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<XMLHttpRequest | null>(null);
+
+  useEffect(() => {
+    if (initialAudioFile) {
+      setAudioFile(initialAudioFile);
+      setAudioPreviewUrl(URL.createObjectURL(initialAudioFile));
+    }
+  }, [initialAudioFile]);
 
   const processFiles = async (selectedFiles: File[]) => {
     if (!selectedFiles.length) return;
@@ -376,7 +390,17 @@ export default function CreatePostModal({
         }
       }
 
-      // Step 2: Finalizing post details
+      // Step 2: Upload attached audio soundtrack if provided
+      let finalAudioUrl: string | null = null;
+      if (audioFile) {
+        setProgress(75);
+        setStatusMessage(`Uploading background soundtrack "${audioFile.name}"...`);
+        finalAudioUrl = await uploadFile(audioFile, (pct, loaded, total) => {
+          setStatusMessage(`Uploading music track... ${pct}%`);
+        });
+      }
+
+      // Step 3: Finalizing post details
       setProgress(90);
       setStatusMessage("Processing post metadata & tags...");
 
@@ -395,6 +419,9 @@ export default function CreatePostModal({
       if (category !== "General") {
         fullCaption += `\n📁 Category: ${category}`;
       }
+      if (audioFile) {
+        fullCaption += `\n🎵 Audio: ${audioFile.name.replace(/\.[^/.]+$/, "")}`;
+      }
 
       const mediaUrlString = mediaUrls.length > 0 ? JSON.stringify(mediaUrls) : null;
 
@@ -403,6 +430,7 @@ export default function CreatePostModal({
         content: fullCaption,
         media_url: mediaUrlString,
         type: postType,
+        audio_url: finalAudioUrl,
       }).select(`*, profiles:user_id(id, username, full_name, avatar_url)`).single();
 
       if (postError) {
@@ -424,6 +452,8 @@ export default function CreatePostModal({
         setCategory("General");
         setFiles([]);
         setPreviews([]);
+        setAudioFile(null);
+        setAudioPreviewUrl(null);
         setLoading(false);
         setProgress(0);
         setStatusMessage("");
@@ -703,16 +733,51 @@ export default function CreatePostModal({
             </div>
           )}
 
-          <div className="flex items-center justify-between">
+          {/* Attached Background Audio / Soundtrack Card */}
+          {audioFile && (
+            <div className="p-3 mb-3 bg-purple-950/30 border border-purple-500/30 rounded-xl flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <div className="p-2 rounded-lg bg-purple-500/20 text-purple-300 shrink-0">
+                  <Music className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-purple-400">Attached Music</span>
+                    <span className="text-[10px] text-zinc-400 truncate font-semibold">{audioFile.name}</span>
+                  </div>
+                  {audioPreviewUrl && (
+                    <audio
+                      src={audioPreviewUrl}
+                      controls
+                      className="h-6 w-full max-w-xs mt-1 accent-purple-500"
+                    />
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setAudioFile(null);
+                  setAudioPreviewUrl(null);
+                }}
+                className="p-1.5 rounded-lg bg-red-600/10 hover:bg-red-600/20 text-red-400 transition-colors shrink-0"
+                title="Remove attached music"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <div className="text-xs font-semibold text-zinc-400">
-                Attach media files:
+                Attach media files & music:
               </div>
               <div className="text-[10px] font-bold text-zinc-500 mt-0.5">
-                Short and long videos supported. Formats: MP4, MOV, WEBM, JPG, PNG, WEBP.
+                Camera capture, videos, photos, and background audio supported.
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <input
                 type="file"
                 ref={fileInputRef}
@@ -721,6 +786,36 @@ export default function CreatePostModal({
                 multiple
                 className="w-0 h-0 absolute opacity-0 overflow-hidden"
               />
+              <input
+                type="file"
+                ref={audioFileInputRef}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    setAudioFile(file);
+                    setAudioPreviewUrl(URL.createObjectURL(file));
+                  }
+                }}
+                accept="audio/*"
+                className="w-0 h-0 absolute opacity-0 overflow-hidden"
+              />
+
+              {onOpenCamera && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onClose();
+                    onOpenCamera();
+                  }}
+                  className="p-2 bg-purple-600/10 hover:bg-purple-600/20 text-purple-400 rounded-xl transition-colors border border-purple-500/30 flex items-center gap-1.5 text-xs font-bold"
+                  title="Open Camera & Sound Studio"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span>Camera</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={(e) => { e.preventDefault(); fileInputRef.current?.click(); }}
@@ -738,6 +833,15 @@ export default function CreatePostModal({
               >
                 <Video className="w-4 h-4" />
                 <span>Video</span>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); audioFileInputRef.current?.click(); }}
+                className="p-2 bg-zinc-900 hover:bg-zinc-800 rounded-xl transition-colors text-amber-400 border border-zinc-800 flex items-center gap-1.5 text-xs font-semibold"
+                title="Add Background Music"
+              >
+                <Music className="w-4 h-4" />
+                <span>Music</span>
               </button>
             </div>
           </div>

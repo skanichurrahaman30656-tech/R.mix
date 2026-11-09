@@ -1,7 +1,7 @@
 "use client";
 import React from 'react';
 import Image from 'next/image';
-import { Heart, MessageCircle, Share2, Bookmark, Loader2, Users, Play, Volume2, VolumeX } from 'lucide-react';
+import { Heart, MessageCircle, Share2, Bookmark, Loader2, Users, Play, Volume2, VolumeX, Camera, Music } from 'lucide-react';
 import { VideoPlayer } from '../shared/VideoPlayer';
 import { ViewTracker } from '../shared/ViewTracker';
 import { Lightbox } from '../shared/Lightbox';
@@ -30,7 +30,8 @@ export function FeedPage({
   handleStoryClick,
   activeLiveSessions,
   onJoinLive,
-  onVideoTap
+  onVideoTap,
+  onOpenCamera,
 }: any) {
   const [lightboxSrc, setLightboxSrc] = React.useState<string | null>(null);
   const [heartPopId, setHeartPopId] = React.useState<string | null>(null);
@@ -75,15 +76,15 @@ export function FeedPage({
             What&apos;s on your mind?
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-2 pt-2.5">
+        <div className="grid grid-cols-3 gap-2 pt-2.5">
           <button 
             onClick={() => {
               const btn = document.getElementById('create-photo-trigger') || document.querySelector('[title="Create Post"]');
               if (btn) (btn as HTMLElement).click();
             }}
-            className="flex items-center justify-center gap-2 py-2 rounded-xl hover:bg-zinc-800/40 text-xs font-semibold text-emerald-400 transition-colors"
+            className="flex items-center justify-center gap-1.5 py-2 rounded-xl hover:bg-zinc-800/40 text-xs font-semibold text-emerald-400 transition-colors"
           >
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <span>Photo</span>
           </button>
           <button 
@@ -91,10 +92,24 @@ export function FeedPage({
               const btn = document.getElementById('create-video-trigger') || document.querySelector('[title="Create Post"]');
               if (btn) (btn as HTMLElement).click();
             }}
-            className="flex items-center justify-center gap-2 py-2 rounded-xl hover:bg-zinc-800/40 text-xs font-semibold text-indigo-400 transition-colors"
+            className="flex items-center justify-center gap-1.5 py-2 rounded-xl hover:bg-zinc-800/40 text-xs font-semibold text-indigo-400 transition-colors"
           >
-            <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse" />
+            <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
             <span>Video</span>
+          </button>
+          <button 
+            onClick={() => {
+              if (onOpenCamera) {
+                onOpenCamera();
+              } else {
+                const btn = document.querySelector('[title="Create Post or Reel"]');
+                if (btn) (btn as HTMLElement).click();
+              }
+            }}
+            className="flex items-center justify-center gap-1.5 py-2 rounded-xl hover:bg-purple-900/20 text-xs font-bold text-purple-400 transition-colors"
+          >
+            <Camera className="w-3.5 h-3.5 text-purple-400" />
+            <span>Camera</span>
           </button>
         </div>
       </div>
@@ -300,8 +315,24 @@ export function FeedPage({
                   );
                 })()}
 
+                {/* Attached Audio Soundtrack Player */}
+                {post.audio_url && (
+                  <div className="mx-4 my-1.5 p-2 rounded-xl bg-zinc-900/90 border border-purple-500/30 flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-300 shrink-0">
+                      <Music className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-purple-300 shrink-0">Music Track</span>
+                    <audio 
+                      src={post.audio_url} 
+                      controls 
+                      controlsList="nodownload" 
+                      className="h-6 flex-1 accent-purple-500 min-w-0" 
+                    />
+                  </div>
+                )}
+
                 {/* Actions */}
-                <div className="px-4 pt-3 pb-2">
+                <div className="px-4 pt-2 pb-2">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-4">
                       <button onClick={() => handleLike(post.id, post.isLiked)} className="hover:opacity-70 transition-opacity">

@@ -24,7 +24,8 @@ import {
   MessageCircle,
   Search,
   ExternalLink,
-  ChevronRight
+  ChevronRight,
+  Loader2
 } from 'lucide-react';
 
 interface MainMenuPanelProps {
@@ -72,8 +73,11 @@ export const MainMenuPanel: React.FC<MainMenuPanelProps> = ({
     { id: '1', title: 'R.mix Live Creator Masterclass', date: 'Tonight at 8 PM', attendees: 340 },
     { id: '2', title: 'Weekly Video & Reel Awards', date: 'Sunday at 5 PM', attendees: 1250 }
   ]);
-  const [helpQuery, setHelpQuery] = useState('');
-  const [helpSubmitted, setHelpSubmitted] = useState(false);
+
+  // AI Support Chat States
+  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'model'; content: string }[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
 
   useEffect(() => {
     if (user?.id && supabase) {
@@ -94,6 +98,35 @@ export const MainMenuPanel: React.FC<MainMenuPanelProps> = ({
     setMyPages(prev => [...prev, { id: Date.now().toString(), name: pageName, category: pageCategory }]);
     setPageName('');
     setActiveModal('pages');
+  };
+
+  const handleSendChatMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim() || chatLoading) return;
+
+    const userMsg = chatInput.trim();
+    setChatInput('');
+    const updatedMessages = [...chatMessages, { role: 'user' as const, content: userMsg }];
+    setChatMessages(updatedMessages);
+    setChatLoading(true);
+
+    try {
+      const res = await fetch('/api/gemini/support', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: updatedMessages })
+      });
+      const data = await res.json();
+      if (data.text) {
+        setChatMessages([...updatedMessages, { role: 'model', content: data.text }]);
+      } else {
+        setChatMessages([...updatedMessages, { role: 'model', content: 'Sorry, I encountered an issue. Please try again.' }]);
+      }
+    } catch {
+      setChatMessages([...updatedMessages, { role: 'model', content: 'Connection error. Please try again later.' }]);
+    } finally {
+      setChatLoading(false);
+    }
   };
 
   return (
@@ -242,7 +275,7 @@ export const MainMenuPanel: React.FC<MainMenuPanelProps> = ({
 
         {/* Bottom List Items */}
         <div className="space-y-1">
-          {/* 14. Help and Support */}
+          {/* 14. Help and Support (AI Chatbot) */}
           <div 
             onClick={() => setActiveModal('help')}
             className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition-colors ${isDarkMode ? 'hover:bg-zinc-900' : 'hover:bg-gray-50'}`}
@@ -251,7 +284,7 @@ export const MainMenuPanel: React.FC<MainMenuPanelProps> = ({
               <div className={`p-2 rounded-full ${isDarkMode ? 'bg-zinc-800' : 'bg-gray-200'}`}>
                 <HelpCircle className="w-6 h-6 text-indigo-400" />
               </div>
-              <span className="font-semibold text-lg">Help and Support</span>
+              <span className="font-semibold text-lg">Help and Support (AI Assistant)</span>
             </div>
             <ChevronRight className="w-5 h-5 opacity-50" />
           </div>
@@ -560,35 +593,61 @@ export const MainMenuPanel: React.FC<MainMenuPanelProps> = ({
               </div>
             )}
 
-            {/* 10. Help and Support Modal */}
+            {/* 10. Help and Support (Gemini AI Support Assistant) */}
             {activeModal === 'help' && (
               <div className="space-y-4">
                 <div className="flex items-center gap-2 pb-2 border-b border-zinc-800">
                   <HelpCircle className="w-6 h-6 text-indigo-400" />
-                  <h3 className="font-bold text-lg">Help and Support</h3>
-                </div>
-                {helpSubmitted ? (
-                  <div className="text-center py-6 space-y-2">
-                    <Check className="w-10 h-10 text-emerald-400 mx-auto" />
-                    <h4 className="font-bold text-base">Support Ticket Submitted!</h4>
-                    <p className="text-xs text-zinc-400">Our support team will get back to you shortly.</p>
+                  <div>
+                    <h3 className="font-bold text-base">R.mix AI Support Assistant</h3>
+                    <p className="text-[11px] text-zinc-400">Ask any question about using R.mix</p>
                   </div>
-                ) : (
-                  <form onSubmit={(e) => { e.preventDefault(); if (helpQuery.trim()) setHelpSubmitted(true); }} className="space-y-3">
-                    <p className="text-xs text-zinc-400">How can we help you with your Rmix creator experience?</p>
-                    <textarea 
-                      rows={3}
-                      placeholder="Describe your issue or question..."
-                      value={helpQuery}
-                      onChange={(e) => setHelpQuery(e.target.value)}
-                      className={`w-full px-3 py-2.5 rounded-xl border text-sm focus:outline-none ${isDarkMode ? 'bg-zinc-950 border-zinc-800 text-white' : 'bg-gray-50 border-zinc-300 text-black'}`}
-                      required
-                    />
-                    <button type="submit" className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs">
-                      Submit Request
-                    </button>
-                  </form>
-                )}
+                </div>
+
+                {/* Scrollable Chat Thread */}
+                <div className="max-h-72 overflow-y-auto space-y-3 p-3 rounded-xl bg-zinc-950/60 border border-zinc-800">
+                  {chatMessages.length === 0 ? (
+                    <div className="text-center py-6 text-zinc-500 text-xs space-y-1">
+                      <p className="font-bold text-zinc-300">Hello! How can I help you today?</p>
+                      <p>Ask me about uploading videos, reels, stats, or profile setup.</p>
+                    </div>
+                  ) : (
+                    chatMessages.map((msg, i) => (
+                      <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[85%] p-3 rounded-2xl text-xs leading-relaxed ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-zinc-800 text-zinc-200 rounded-bl-none'}`}>
+                          {msg.content}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  {chatLoading && (
+                    <div className="flex justify-start">
+                      <div className="bg-zinc-800 text-zinc-400 p-3 rounded-2xl text-xs flex items-center gap-2">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>AI Assistant is typing...</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Input Form */}
+                <form onSubmit={handleSendChatMessage} className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Type your question here..."
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    className={`flex-1 px-3 py-2.5 rounded-xl border text-xs focus:outline-none ${isDarkMode ? 'bg-zinc-950 border-zinc-800 text-white' : 'bg-gray-50 border-zinc-300 text-black'}`}
+                    required
+                  />
+                  <button
+                    type="submit"
+                    disabled={chatLoading || !chatInput.trim()}
+                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs disabled:opacity-50"
+                  >
+                    Send
+                  </button>
+                </form>
               </div>
             )}
 

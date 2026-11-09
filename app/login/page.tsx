@@ -1,19 +1,40 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Sparkles, ArrowLeft, Mail, Lock, Loader2 } from 'lucide-react';
+import { Sparkles, ArrowLeft, Mail, Lock, Loader2, KeyRound } from 'lucide-react';
 import Link from 'next/link';
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [isRecovery, setIsRecovery] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash;
+      const search = window.location.search;
+      if (hash.includes('type=recovery') || search.includes('type=recovery')) {
+        setIsRecovery(true);
+      }
+    }
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecovery(true);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,6 +71,55 @@ export default function LoginPage() {
     }
   };
 
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) {
+      setErrorMessage('Please enter your email address.');
+      return;
+    }
+
+    setLoading(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/login`,
+      });
+      if (error) throw error;
+      setSuccessMessage('Password reset instructions sent to your email! Please check your inbox.');
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to send password reset email. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPassword) {
+      setErrorMessage('Please enter a new password.');
+      return;
+    }
+
+    setLoading(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      setSuccessMessage('Password updated successfully! Redirecting to feed...');
+      setTimeout(() => {
+        router.push('/');
+      }, 2000);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'Failed to update password. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-black text-white flex flex-col justify-center items-center px-4 py-12 relative selection:bg-indigo-500 selection:text-white">
       {/* Background Glow */}
@@ -79,7 +149,13 @@ export default function LoginPage() {
             </span>
           </div>
           <p className="text-zinc-400 text-sm mt-2 text-center">
-            {isSignUp ? 'Create your R.mix creator account' : 'Sign in to your R.mix account'}
+            {isRecovery 
+              ? 'Enter your new password' 
+              : isForgotPassword 
+              ? 'Reset your R.mix password' 
+              : isSignUp 
+              ? 'Create your R.mix creator account' 
+              : 'Sign in to your R.mix account'}
           </p>
         </div>
 
@@ -95,66 +171,164 @@ export default function LoginPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-zinc-300 mb-1.5">Email</label>
-            <div className="relative">
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 pl-10 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
-              />
-              <Mail className="w-4 h-4 text-zinc-500 absolute left-3.5 top-3" />
+        {isRecovery ? (
+          <form onSubmit={handleUpdatePassword} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-zinc-300 mb-1.5">New Password</label>
+              <div className="relative">
+                <input
+                  type="password"
+                  required
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 pl-10 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+                />
+                <KeyRound className="w-4 h-4 text-zinc-500 absolute left-3.5 top-3" />
+              </div>
             </div>
-          </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-zinc-300 mb-1.5">Password</label>
-            <div className="relative">
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 pl-10 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
-              />
-              <Lock className="w-4 h-4 text-zinc-500 absolute left-3.5 top-3" />
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full mt-2 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  <span>Update Password</span>
+                </>
+              )}
+            </button>
+          </form>
+        ) : isForgotPassword ? (
+          <form onSubmit={handleForgotPassword} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-zinc-300 mb-1.5">Email Address</label>
+              <div className="relative">
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 pl-10 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+                />
+                <Mail className="w-4 h-4 text-zinc-500 absolute left-3.5 top-3" />
+              </div>
             </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full mt-2 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  <span>Send Reset Instructions</span>
+                </>
+              )}
+            </button>
+
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsForgotPassword(false);
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                }}
+                className="text-xs text-zinc-400 hover:text-white transition-colors"
+              >
+                Remember your password? Sign In
+              </button>
+            </div>
+          </form>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-zinc-300 mb-1.5">Email</label>
+              <div className="relative">
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 pl-10 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+                />
+                <Mail className="w-4 h-4 text-zinc-500 absolute left-3.5 top-3" />
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-zinc-300">Password</label>
+                {!isSignUp && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsForgotPassword(true);
+                      setErrorMessage(null);
+                      setSuccessMessage(null);
+                    }}
+                    className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                  >
+                    Forgot password?
+                  </button>
+                )}
+              </div>
+              <div className="relative">
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 pl-10 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+                />
+                <Lock className="w-4 h-4 text-zinc-500 absolute left-3.5 top-3" />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full mt-2 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  <span>{isSignUp ? 'Sign Up' : 'Sign In'}</span>
+                </>
+              )}
+            </button>
+          </form>
+        )}
+
+        {!isRecovery && (
+          <div className="mt-6 pt-6 border-t border-zinc-800/80 text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setIsSignUp(!isSignUp);
+                setIsForgotPassword(false);
+                setErrorMessage(null);
+                setSuccessMessage(null);
+              }}
+              className="text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
+            >
+              {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
+            </button>
           </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full mt-2 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-indigo-500/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4" />
-                <span>{isSignUp ? 'Sign Up' : 'Sign In'}</span>
-              </>
-            )}
-          </button>
-        </form>
-
-        <div className="mt-6 pt-6 border-t border-zinc-800/80 text-center">
-          <button
-            type="button"
-            onClick={() => {
-              setIsSignUp(!isSignUp);
-              setErrorMessage(null);
-              setSuccessMessage(null);
-            }}
-            className="text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
-          >
-            {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
-          </button>
-        </div>
+        )}
       </div>
     </div>
   );

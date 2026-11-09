@@ -20,10 +20,11 @@ import {
   Volume2, VolumeX, User, ArrowUpRight, BarChart3,
   Link as LinkIcon, MapPin, CheckCircle2, DollarSign, Star, Award, 
   Zap, Briefcase, Send, ShieldCheck, ShieldAlert, CreditCard, Lightbulb,
-  Menu, Plus, AlertCircle
+  Menu, Plus, AlertCircle, Camera
 } from 'lucide-react';
 
 const CreatePostModal = dynamic(() => import('./shared/CreatePostModal'), { ssr: false });
+const CameraStudioModal = dynamic(() => import('./shared/CameraStudioModal'), { ssr: false });
 const CopyrightManagementSection = dynamic(() => import('./CopyrightManagementSection').then(mod => mod.CopyrightManagementSection), { ssr: false });
 const FeedPage = dynamic(() => import('./feed/FeedPage').then(mod => mod.FeedPage), { ssr: false });
 const SearchPage = dynamic(() => import('./search/SearchPage').then(mod => mod.SearchPage), { ssr: false });
@@ -87,6 +88,8 @@ export default function MainDashboardClient({
   const [createMode, setCreateMode] = useState<'photo' | 'video' | 'reel' | 'text'>('text');
   const [showCreatePost, setShowCreatePost] = useState(false);
   const [createPostInitialFiles, setCreatePostInitialFiles] = useState<File[]>([]);
+  const [showCameraStudio, setShowCameraStudio] = useState(false);
+  const [createPostInitialAudioFile, setCreatePostInitialAudioFile] = useState<File | null>(null);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showFullDashboard, setShowFullDashboard] = useState(false);
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
@@ -401,6 +404,7 @@ export default function MainDashboardClient({
             video_url: p.video_url,
             media_url: p.media_url,
             image_url: p.image_url,
+            audio_url: p.audio_url,
             media_urls: mediaList,
             type: resolvedType,
             likes: likesCount,
@@ -849,6 +853,7 @@ export default function MainDashboardClient({
             video_url: p.video_url,
             media_url: p.media_url,
             image_url: p.image_url,
+            audio_url: p.audio_url,
             media_urls: mediaList,
             type: resolvedType,
             likes: likesCount,
@@ -1598,6 +1603,7 @@ export default function MainDashboardClient({
                 setActiveReelId(postId);
                 setViewMode('reels');
               }}
+              onOpenCamera={() => setShowCameraStudio(true)}
             />
           );
         })()}
@@ -2169,6 +2175,33 @@ export default function MainDashboardClient({
             </div>
 
             <div className="grid grid-cols-2 gap-3">
+              {/* Camera & Sound Studio Choice */}
+              <button 
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setShowCreateChoiceModal(false);
+                  setShowCameraStudio(true);
+                }}
+                className="col-span-2 p-3.5 rounded-xl border flex items-center justify-between gap-3 hover:border-purple-500 hover:scale-[1.01] transition-all bg-gradient-to-r from-purple-900/30 via-indigo-900/20 to-zinc-900/80 border-purple-500/30 text-left shadow-lg shadow-purple-500/10"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="p-2.5 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/30 shrink-0">
+                    <Camera className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm text-white">Camera & Music Studio</span>
+                      <span className="text-[9px] uppercase tracking-wider font-extrabold px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                        STUDIO
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-zinc-400 truncate">Capture photos, record videos & mix sound</p>
+                  </div>
+                </div>
+                <span className="text-xs font-bold text-purple-400 shrink-0">Open &rarr;</span>
+              </button>
+
               {/* Photo Choice */}
               <label 
                 className={`cursor-pointer p-4 rounded-xl border flex flex-col items-center justify-center gap-2 hover:border-indigo-500 hover:scale-[1.02] transition-all ${
@@ -3044,10 +3077,13 @@ export default function MainDashboardClient({
           onClose={() => {
             setShowCreatePost(false);
             setCreatePostInitialFiles([]);
+            setCreatePostInitialAudioFile(null);
           }}
           user={user}
           initialMode={createMode}
           initialFiles={createPostInitialFiles}
+          initialAudioFile={createPostInitialAudioFile}
+          onOpenCamera={() => setShowCameraStudio(true)}
           onPostCreated={(newPost) => {
             if (newPost) {
               const formattedNewPost = {
@@ -3059,6 +3095,7 @@ export default function MainDashboardClient({
                 video_url: newPost.video_url,
                 media_url: newPost.media_url,
                 image_url: newPost.image_url,
+                audio_url: newPost.audio_url,
                 type: newPost.type,
                 likes: 0,
                 comments: [],
@@ -3074,7 +3111,60 @@ export default function MainDashboardClient({
               };
               setPosts(prev => [formattedNewPost, ...prev]);
             }
-            
+          }}
+        />
+      )}
+
+      {/* Camera & Sound Studio Modal */}
+      {user && (
+        <CameraStudioModal
+          isOpen={showCameraStudio}
+          onClose={() => setShowCameraStudio(false)}
+          user={user}
+          onPostCreated={(newPost) => {
+            if (newPost) {
+              let firstMedia = newPost.media_url;
+              if (typeof newPost.media_url === 'string' && newPost.media_url.startsWith('[')) {
+                try {
+                  const parsed = JSON.parse(newPost.media_url);
+                  firstMedia = Array.isArray(parsed) ? parsed[0] : parsed;
+                } catch {}
+              }
+              const isVideo = newPost.type === 'video' || newPost.type === 'reel';
+              const formattedNewPost = {
+                id: newPost.id,
+                author: newPost.profiles?.username || newPost.profiles?.full_name || `user_${(newPost.user_id || "").substring(0, 8)}`,
+                handle: `@${newPost.profiles?.username || 'user'}`,
+                avatar: newPost.profiles?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp',
+                image: isVideo ? (newPost.image_url || firstMedia) : firstMedia,
+                video_url: isVideo ? (newPost.video_url || firstMedia) : newPost.video_url,
+                media_url: newPost.media_url,
+                media_urls: [firstMedia],
+                image_url: newPost.image_url,
+                audio_url: newPost.audio_url,
+                type: newPost.type,
+                likes: 0,
+                comments: [],
+                commentsCount: 0,
+                caption: newPost.content,
+                views: 0,
+                isLiked: false,
+                isBookmarked: false,
+                showComments: false,
+                newComment: '',
+                user_id: newPost.user_id,
+                created_at: newPost.created_at
+              };
+              setPosts(prev => [formattedNewPost, ...prev]);
+              // Also update profile posts if in profile view
+              setProfilePosts(prev => [formattedNewPost, ...prev]);
+            }
+          }}
+          onOpenStandardEditor={(files, studioMode, audioFile) => {
+            setCreatePostInitialFiles(files);
+            setCreateMode(studioMode);
+            setCreatePostInitialAudioFile(audioFile || null);
+            setShowCreatePost(true);
           }}
         />
       )}

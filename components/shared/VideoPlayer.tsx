@@ -21,7 +21,7 @@ export const VideoPlayer = React.forwardRef<HTMLVideoElement, VideoPlayerProps>(
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isValidType, setIsValidType] = useState(true);
-    const [inView, setInView] = useState(false);
+    const [inView, setInView] = useState(true);
     
     // Use internal ref if external is not provided for error handling if needed
     const fallbackRef = useRef<HTMLVideoElement>(null);
@@ -32,10 +32,10 @@ export const VideoPlayer = React.forwardRef<HTMLVideoElement, VideoPlayerProps>(
       const observer = new IntersectionObserver(
         (entries) => {
           entries.forEach(entry => {
-            if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+            if (entry.isIntersecting) {
               setInView(true);
               if (autoPlay && videoRef.current) {
-                videoRef.current.muted = false; // ensure unmuted when active
+                videoRef.current.muted = muted;
                 const playPromise = videoRef.current.play();
                 if (playPromise !== undefined) {
                   playPromise.catch(e => {
@@ -54,7 +54,7 @@ export const VideoPlayer = React.forwardRef<HTMLVideoElement, VideoPlayerProps>(
             }
           });
         },
-        { threshold: [0, 0.5] }
+        { threshold: [0, 0.25] }
       );
 
       if (containerRef.current) {
@@ -64,7 +64,7 @@ export const VideoPlayer = React.forwardRef<HTMLVideoElement, VideoPlayerProps>(
       return () => {
         observer.disconnect();
       };
-    }, [autoPlay, videoRef]);
+    }, [autoPlay, muted, videoRef]);
 
     useEffect(() => {
       const video = videoRef.current;
